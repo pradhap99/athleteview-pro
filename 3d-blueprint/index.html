@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AthleteView SmartPatch v3.0 — Hardware Blueprint</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- 3D Canvas -->
+  <canvas id="three-canvas"></canvas>
+
+  <!-- Top-left header -->
+  <header id="header">
+    <div class="header-logo">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-label="AthleteView Logo">
+        <rect x="2" y="2" width="24" height="24" rx="5" stroke="#0A6E75" stroke-width="1.5" fill="none"/>
+        <circle cx="14" cy="11" r="3.5" stroke="#0A6E75" stroke-width="1.2" fill="none"/>
+        <path d="M7 22c0-4 3.5-6.5 7-6.5s7 2.5 7 6.5" stroke="#0A6E75" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+        <line x1="22" y1="3" x2="26" y2="0" stroke="#0A6E75" stroke-width="1"/>
+        <circle cx="26.5" cy="0" r="1" fill="#0A6E75"/>
+      </svg>
+    </div>
+    <div class="header-text">
+      <h1>AthleteView SmartPatch v3.0</h1>
+      <p class="subtitle">Hardware Blueprint</p>
+    </div>
+    <div class="header-specs">
+      <span class="spec-pill">72 × 48 × 4.5mm</span>
+      <span class="spec-pill">18g</span>
+      <span class="spec-pill">21 Components</span>
+    </div>
+  </header>
+
+  <!-- Camera preset buttons -->
+  <div id="camera-presets">
+    <button data-view="isometric" class="preset-btn active">Isometric</button>
+    <button data-view="top" class="preset-btn">Top</button>
+    <button data-view="side" class="preset-btn">Side</button>
+    <button data-view="bottom" class="preset-btn">Bottom</button>
+  </div>
+
+  <!-- Legend bottom-left -->
+  <div id="legend">
+    <div class="legend-title">Component Categories</div>
+    <div class="legend-item" data-category="processing">
+      <span class="legend-dot" style="background:#22C55E;"></span>
+      <span>Processing</span>
+    </div>
+    <div class="legend-item" data-category="connectivity">
+      <span class="legend-dot" style="background:#3B82F6;"></span>
+      <span>Connectivity</span>
+    </div>
+    <div class="legend-item" data-category="biometrics">
+      <span class="legend-dot" style="background:#EF4444;"></span>
+      <span>Biometrics</span>
+    </div>
+    <div class="legend-item" data-category="power">
+      <span class="legend-dot" style="background:#F59E0B;"></span>
+      <span>Power</span>
+    </div>
+    <div class="legend-item" data-category="mechanical">
+      <span class="legend-dot" style="background:#6B7280;"></span>
+      <span>Mechanical</span>
+    </div>
+  </div>
+
+  <!-- Bottom controls bar -->
+  <div id="controls-bar">
+    <button id="explode-btn" class="control-btn">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M8 1v4M8 11v4M1 8h4M11 8h4M3 3l2.5 2.5M10.5 10.5L13 13M13 3l-2.5 2.5M5.5 10.5L3 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      <span>Explode</span>
+    </button>
+    <div id="slider-container">
+      <label for="explode-slider" class="slider-label">Layer Separation</label>
+      <input type="range" id="explode-slider" min="0" max="100" value="0" />
+      <div class="slider-value"><span id="slider-val">0</span>%</div>
+    </div>
+    <button id="reset-btn" class="control-btn">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M2 8a6 6 0 1 1 1.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <path d="M2 12V8h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>Reset</span>
+    </button>
+  </div>
+
+  <!-- Info panel (right side, slide-in) -->
+  <div id="info-panel" class="hidden">
+    <button id="info-close" aria-label="Close panel">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+        <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </button>
+    <div class="info-header">
+      <div id="info-category-dot" class="legend-dot"></div>
+      <span id="info-category-name" class="info-category"></span>
+    </div>
+    <h2 id="info-name"></h2>
+    <p id="info-part" class="info-part-number"></p>
+    <div class="info-section">
+      <h3>Dimensions</h3>
+      <p id="info-dimensions"></p>
+    </div>
+    <div class="info-section">
+      <h3>Key Specs</h3>
+      <ul id="info-specs"></ul>
+    </div>
+    <div class="info-section">
+      <h3>Layer Position</h3>
+      <p id="info-layer"></p>
+    </div>
+  </div>
+
+  <!-- Hover tooltip -->
+  <div id="tooltip" class="hidden">
+    <span id="tooltip-name"></span>
+    <span id="tooltip-spec" class="tooltip-spec"></span>
+  </div>
+
+  <!-- Loading screen -->
+  <div id="loading">
+    <div class="loader-ring"></div>
+    <p>Initializing 3D Blueprint...</p>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
