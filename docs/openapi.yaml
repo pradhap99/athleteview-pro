@@ -1,0 +1,1046 @@
+openapi: 3.1.0
+info:
+  title: Throughline API
+  version: 0.1.0
+  description: >
+    Starter API contract for Throughline — the AI-native production-management
+    platform whose core is one live production graph (script -> breakdown ->
+    schedule -> Day-Out-of-Days -> budget -> on-set). Captures the representative
+    endpoints from PRODUCT_SPEC section 10.
+
+
+    This file is the SINGLE SOURCE OF TRUTH for generated TypeScript types
+    (packages/shared) and is imported into both frontend and backend context;
+    contract tests gate merges. Never hand-edit the generated TS files.
+
+
+    Conventions: /v1/ in path, camelCase JSON, cursor pagination. REST for CRUD,
+    SSE for AI token/breakdown streaming, WebSocket for CRDT collab (WS routes not
+    modeled here). AI outputs are always DRAFTS — a status field only a human
+    action flips; nothing is auto-marked final.
+
+servers:
+  - url: https://api.throughline.app/v1
+    description: Production
+  - url: http://localhost:8000/v1
+    description: Local dev
+
+tags:
+  - name: Scripts
+    description: Script ingest, AI breakdown, and export.
+  - name: Jobs
+    description: Async jobs and their SSE streams.
+  - name: Graph
+    description: Materialized production-graph snapshots (incl. Time Machine).
+  - name: Changes
+    description: Submit a change, review the proposed diff, confirm or reject.
+  - name: Schedule
+    description: Constraint-solver scheduling / re-board optimization.
+  - name: Budget
+    description: Budget export in industry formats.
+  - name: Branches
+    description: What-if forks of the production graph.
+  - name: Search
+    description: Hybrid search and grounded Q&A with citations.
+  - name: CallSheets
+    description: Call-sheet publication.
+
+paths:
+  /projects/{id}/scripts:import:
+    post:
+      operationId: importScript
+      tags: [Scripts]
+      summary: Import a script and start an AI breakdown
+      description: >
+        Upload a .fdx / Fountain / PDF script. A deterministic parser structures
+        it, then a zero-shot NER pass plus a constrained-JSON LLM propose draft
+        element tags. Returns a jobId immediately; the breakdown is STREAMED as it
+        is produced via SSE at GET /jobs/{jobId}/stream. Drafted elements land on
+        the graph with confidence + provenance and enter the human confirm queue.
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ScriptImportRequest'
+      responses:
+        '202':
+          description: Import accepted; breakdown will stream over SSE.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /jobs/{jobId}/stream:
+    get:
+      operationId: streamJob
+      tags: [Jobs]
+      summary: SSE breakdown stream for a job
+      description: >
+        Server-Sent Events (text/event-stream) stream of breakdown progress and
+        drafted elements as they are produced. Each event carries a drafted Element
+        (with confidence + source span) or a progress/heartbeat/done marker. Clients
+        render incremental draft tags; low-confidence tags are flagged for review.
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: An SSE stream of breakdown events.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: >
+                  SSE frames. Data payloads are JSON matching BreakdownStreamEvent,
+                  one per `data:` line, terminated by an event with kind "done".
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{id}/graph:
+    get:
+      operationId: getGraph
+      tags: [Graph]
+      summary: Get a materialized graph snapshot (Time Machine capable)
+      description: >
+        Returns the materialized production-graph snapshot. Pass ?at={eventId} to
+        reconstruct the graph as it was at any past event (Time Machine).
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: at
+          in: query
+          required: false
+          description: Event id to reconstruct the graph at a past point (Time Machine).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Materialized graph snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphSnapshot'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{id}/changes:
+    post:
+      operationId: submitChange
+      tags: [Changes]
+      summary: Submit a change; get a proposed diff
+      description: >
+        Submit a change to any graph node (recast, move a day, edit a rate).
+        Dependents are recomputed deterministically and returned as a PROPOSED
+        DIFF — never a silent write. The caller then confirms or rejects it.
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeRequest'
+      responses:
+        '200':
+          description: Proposed diff with dependents recomputed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProposedDiff'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{id}/changes/{diffId}:confirm:
+    post:
+      operationId: confirmChange
+      tags: [Changes]
+      summary: Confirm a proposed diff
+      description: >
+        A human action that applies the proposed diff. The accepted change appends
+        to the event log; projections update. This is the only path that flips a
+        draft to applied — nothing is auto-marked final.
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/DiffId'
+      responses:
+        '200':
+          description: Diff confirmed and appended to the event log.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /projects/{id}/changes/{diffId}:reject:
+    post:
+      operationId: rejectChange
+      tags: [Changes]
+      summary: Reject a proposed diff
+      description: Discards the proposed diff; no event is appended.
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/DiffId'
+      responses:
+        '204':
+          description: Diff rejected and discarded.
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{id}/schedule:optimize:
+    post:
+      operationId: optimizeSchedule
+      tags: [Schedule]
+      summary: Optimize the schedule under constraints
+      description: >
+        OR-Tools CP-SAT proposes a re-board given constraints and an objective
+        (e.g. minimize hold days / cast spread). Hard constraints are never
+        violated in a proposal. Returns a proposed re-board plus a human-readable
+        rationale and the dollar/day deltas; the human approves via the changes
+        endpoints.
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleOptimizeRequest'
+      responses:
+        '200':
+          description: Proposed re-board with rationale.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleOptimizeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: No feasible schedule under the given hard constraints.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /projects/{id}/budget:export:
+    post:
+      operationId: exportBudget
+      tags: [Budget]
+      summary: Export the budget in an industry format
+      description: >
+        Export the budget. AICP (sections A-W) and Movie Magic (.mmb) round-trip
+        losslessly on core fields; PDF and CSV are presentation exports. Lossless
+        export is a marketed right, never gated.
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: format
+          in: query
+          required: true
+          description: Target export format.
+          schema:
+            type: string
+            enum: [aicp, mmb, pdf, csv]
+      responses:
+        '200':
+          description: The exported budget artifact.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{id}/scripts:export:
+    post:
+      operationId: exportScript
+      tags: [Scripts]
+      summary: Export the script (Final Draft)
+      description: >
+        Export the script as Final Draft (.fdx). Deterministic writer owns format
+        fidelity — never AI. Round-trips core fields without loss.
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: format
+          in: query
+          required: true
+          description: Target script export format.
+          schema:
+            type: string
+            enum: [fdx]
+      responses:
+        '200':
+          description: The exported script artifact.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{id}/branches:
+    post:
+      operationId: createBranch
+      tags: [Branches]
+      summary: Fork the production graph (what-if branch)
+      description: >
+        Fork the entire production graph at the current (or a specified) event so
+        an alternative can be tried and compared. Branches are event-log-backed.
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BranchCreateRequest'
+      responses:
+        '201':
+          description: Branch created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Branch'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{id}/branches/{branchId}:diff:
+    get:
+      operationId: diffBranch
+      tags: [Branches]
+      summary: Diff a branch against mainline
+      description: >
+        Side-by-side diff of a branch vs the mainline across budget, DOOD, and
+        calendar — the basis for merge-the-winner or discard.
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/BranchId'
+      responses:
+        '200':
+          description: The branch-vs-mainline diff.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BranchDiff'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{id}/search:
+    post:
+      operationId: search
+      tags: [Search]
+      summary: Hybrid semantic + keyword search
+      description: >
+        Hybrid dense (pgvector) + keyword search across all production content
+        (scripts, notes, comms, documents, and later footage logs). Results
+        respect role-based access. Cursor pagination.
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+      responses:
+        '200':
+          description: Ranked search results (cursor-paginated).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{id}/ask:
+    post:
+      operationId: ask
+      tags: [Search]
+      summary: Grounded Q&A with citations
+      description: >
+        Grounded question answering. Answers ONLY from retrieved context, cites
+        the specific source node for every claim, and ABSTAINS ("insufficient
+        sources") rather than guess. A faithfulness gate (>= 0.90) routes low
+        confidence to abstention/human. Respects role-based access.
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AskRequest'
+      responses:
+        '200':
+          description: A grounded answer with citations, or an abstention.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AskResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /projects/{id}/callsheets/{dayId}:publish:
+    post:
+      operationId: publishCallSheet
+      tags: [CallSheets]
+      summary: Publish a call sheet for a shooting day
+      description: >
+        Publish (or re-publish as a revision) the call sheet for a shooting day.
+        A revision supersedes prior versions and re-notifies only affected
+        recipients; delivery + acknowledgment are tracked per recipient.
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/DayId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CallSheetPublishRequest'
+      responses:
+        '200':
+          description: Call sheet published.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallSheet'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+components:
+  parameters:
+    ProjectId:
+      name: id
+      in: path
+      required: true
+      description: Project id.
+      schema:
+        type: string
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      description: Async job id.
+      schema:
+        type: string
+    DiffId:
+      name: diffId
+      in: path
+      required: true
+      description: Proposed-diff id.
+      schema:
+        type: string
+    BranchId:
+      name: branchId
+      in: path
+      required: true
+      description: Branch id.
+      schema:
+        type: string
+    DayId:
+      name: dayId
+      in: path
+      required: true
+      description: Shooting-day id.
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Malformed request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: State conflict (e.g. diff already applied, stale revision).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+
+    # ---- Core graph entities (PRODUCT_SPEC section 9 data model) ----
+
+    Project:
+      type: object
+      required: [id, orgId, title, type]
+      properties:
+        id:
+          type: string
+        orgId:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+          enum: [scripted, commercial, episodic]
+        createdAt:
+          type: string
+          format: date-time
+
+    Scene:
+      type: object
+      required: [id, scriptId, number]
+      properties:
+        id:
+          type: string
+        scriptId:
+          type: string
+        number:
+          type: string
+        intExt:
+          type: string
+          enum: [INT, EXT, INT/EXT]
+        locationId:
+          type: string
+          nullable: true
+        timeOfDay:
+          type: string
+        pageEighths:
+          type: integer
+          description: Scene length in eighths of a page.
+        heading:
+          type: string
+        body:
+          type: string
+
+    Element:
+      type: object
+      required: [id, projectId, etype, name]
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        etype:
+          type: string
+          description: Element category.
+          enum:
+            - cast
+            - prop
+            - wardrobe
+            - location
+            - vehicle
+            - sfx
+            - vfx
+            - stunt
+            - animal
+            - sound
+            - setDressing
+        name:
+          type: string
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Draft confidence from the AI tagging pass.
+        source:
+          type: string
+          enum: [rule, ner, llm, human]
+        sourceSpan:
+          type: object
+          description: Click-to-source span in the script.
+          properties:
+            start:
+              type: integer
+            end:
+              type: integer
+        needsReview:
+          type: boolean
+          description: True for low-confidence/ambiguous or safety-critical tags.
+
+    ShootingDay:
+      type: object
+      required: [id, projectId, index]
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        index:
+          type: integer
+        date:
+          type: string
+          format: date
+          nullable: true
+        primaryLocationId:
+          type: string
+          nullable: true
+        sceneIds:
+          type: array
+          items:
+            type: string
+          description: Scenes scheduled on this day, in shooting order.
+
+    DoodEntry:
+      type: object
+      required: [projectId, castElementId, dayIndex, code]
+      properties:
+        projectId:
+          type: string
+        castElementId:
+          type: string
+        dayIndex:
+          type: integer
+        code:
+          type: string
+          description: Day-Out-of-Days status code.
+          enum: [SW, W, WF, H, SWF]
+
+    BudgetLine:
+      type: object
+      required: [id, projectId, code]
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        code:
+          type: string
+          description: Account code.
+        category:
+          type: string
+          description: e.g. ATL / BTL-production / Post / Other.
+        description:
+          type: string
+        qty:
+          type: number
+        unit:
+          type: string
+        rate:
+          type: number
+        fringePct:
+          type: number
+          format: float
+        driverRef:
+          type: string
+          nullable: true
+          description: Link to the graph fact that drives this line.
+
+    ProposedDiff:
+      type: object
+      required: [diffId, projectId, status, entries]
+      properties:
+        diffId:
+          type: string
+        projectId:
+          type: string
+        status:
+          type: string
+          description: Draft until a human confirms; only a human action flips it.
+          enum: [proposed, confirmed, rejected]
+        sourceChange:
+          $ref: '#/components/schemas/ChangeRequest'
+        entries:
+          type: array
+          description: Per-entity before/after with recomputed dependents.
+          items:
+            type: object
+            required: [entityType, entityId, op]
+            properties:
+              entityType:
+                type: string
+              entityId:
+                type: string
+              op:
+                type: string
+                enum: [add, update, delete]
+              before: {}
+              after: {}
+        rationale:
+          type: string
+          description: Human-readable explanation of the ripple.
+        costDelta:
+          type: number
+          nullable: true
+          description: Net dollar impact on the top sheet.
+
+    Event:
+      type: object
+      required: [id, projectId, ts, actor, kind]
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        ts:
+          type: string
+          format: date-time
+        actor:
+          type: string
+          description: User or agent that produced the event.
+        kind:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+
+    # ---- Supporting request/response schemas ----
+
+    JobAccepted:
+      type: object
+      required: [jobId]
+      properties:
+        jobId:
+          type: string
+        streamUrl:
+          type: string
+          description: SSE endpoint for this job (GET /jobs/{jobId}/stream).
+
+    BreakdownStreamEvent:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [progress, element, heartbeat, done, error]
+        progress:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        element:
+          $ref: '#/components/schemas/Element'
+        message:
+          type: string
+
+    ScriptImportRequest:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+          description: The .fdx / Fountain / PDF script.
+        sourceFormat:
+          type: string
+          enum: [fdx, fountain, pdf]
+
+    GraphSnapshot:
+      type: object
+      required: [projectId]
+      properties:
+        projectId:
+          type: string
+        atEventId:
+          type: string
+          nullable: true
+          description: The event the snapshot was reconstructed at (Time Machine).
+        project:
+          $ref: '#/components/schemas/Project'
+        scenes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Scene'
+        elements:
+          type: array
+          items:
+            $ref: '#/components/schemas/Element'
+        shootingDays:
+          type: array
+          items:
+            $ref: '#/components/schemas/ShootingDay'
+        doodEntries:
+          type: array
+          items:
+            $ref: '#/components/schemas/DoodEntry'
+        budgetLines:
+          type: array
+          items:
+            $ref: '#/components/schemas/BudgetLine'
+
+    ChangeRequest:
+      type: object
+      required: [entityType, entityId, op]
+      properties:
+        entityType:
+          type: string
+          description: e.g. scene, element, shootingDay, budgetLine.
+        entityId:
+          type: string
+        op:
+          type: string
+          enum: [add, update, delete]
+        patch:
+          type: object
+          additionalProperties: true
+          description: Field-level changes to apply.
+        note:
+          type: string
+          description: Why the change is being made (captured on the event).
+
+    ScheduleOptimizeRequest:
+      type: object
+      required: [objective]
+      properties:
+        objective:
+          type: string
+          description: e.g. minimizeHoldDays, minimizeCastSpread, minimizeCost.
+          enum: [minimizeHoldDays, minimizeCastSpread, minimizeCost, minimizeCompanyMoves]
+        constraints:
+          type: array
+          description: Hard/soft constraints the solver must honor.
+          items:
+            type: object
+            required: [type]
+            properties:
+              type:
+                type: string
+                description: e.g. castAvailability, locationDays, turnaround, dayNight.
+              hard:
+                type: boolean
+                default: true
+              params:
+                type: object
+                additionalProperties: true
+        naturalLanguage:
+          type: string
+          description: Optional NL command translated into constraints (human approves).
+
+    ScheduleOptimizeResponse:
+      type: object
+      required: [proposedDiff]
+      properties:
+        proposedDiff:
+          $ref: '#/components/schemas/ProposedDiff'
+        rationale:
+          type: string
+        optimalityGap:
+          type: number
+          format: float
+          description: Gap vs best-known baseline (target mean <= 0.10).
+        solveMs:
+          type: integer
+        holdDaysDelta:
+          type: integer
+        costDelta:
+          type: number
+
+    ExportResult:
+      type: object
+      properties:
+        format:
+          type: string
+          enum: [aicp, mmb, pdf, csv, fdx]
+        url:
+          type: string
+          description: Download URL for the generated artifact.
+        checksum:
+          type: string
+
+    BranchCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        parentEventId:
+          type: string
+          nullable: true
+          description: Event to fork from; defaults to current head.
+
+    Branch:
+      type: object
+      required: [id, projectId, name]
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        parentEventId:
+          type: string
+          nullable: true
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    BranchDiff:
+      type: object
+      required: [branchId]
+      properties:
+        branchId:
+          type: string
+        budget:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProposedDiff'
+        dood:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProposedDiff'
+        calendar:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProposedDiff'
+        costDelta:
+          type: number
+
+    SearchRequest:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+        cursor:
+          type: string
+          nullable: true
+        limit:
+          type: integer
+          default: 20
+          maximum: 100
+
+    SearchResponse:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+        nextCursor:
+          type: string
+          nullable: true
+          description: Cursor for the next page; null when exhausted.
+
+    SearchResult:
+      type: object
+      required: [nodeId, score]
+      properties:
+        nodeId:
+          type: string
+        nodeType:
+          type: string
+        score:
+          type: number
+          format: float
+        snippet:
+          type: string
+
+    AskRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+
+    AskResponse:
+      type: object
+      required: [abstained]
+      properties:
+        answer:
+          type: string
+          nullable: true
+          description: Null when abstained.
+        abstained:
+          type: boolean
+          description: True when sources are insufficient (bias toward abstention).
+        faithfulness:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Groundedness score; below 0.90 forces abstention/human routing.
+        citations:
+          type: array
+          description: One citation per claim; every claim must be cited.
+          items:
+            type: object
+            required: [nodeId]
+            properties:
+              nodeId:
+                type: string
+              nodeType:
+                type: string
+              snippet:
+                type: string
+
+    CallSheetPublishRequest:
+      type: object
+      properties:
+        note:
+          type: string
+          description: Optional revision note.
+
+    CallSheet:
+      type: object
+      required: [id, dayId, revision]
+      properties:
+        id:
+          type: string
+        dayId:
+          type: string
+        revision:
+          type: integer
+        publishedAt:
+          type: string
+          format: date-time
+        recipients:
+          type: array
+          items:
+            $ref: '#/components/schemas/CallSheetRecipient'
+
+    CallSheetRecipient:
+      type: object
+      required: [contactId]
+      properties:
+        contactId:
+          type: string
+        deliveredAt:
+          type: string
+          format: date-time
+          nullable: true
+        acknowledgedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true

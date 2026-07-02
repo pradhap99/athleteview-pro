@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(make:*)",
+      "Bash(uv:*)",
+      "Bash(pnpm:*)",
+      "Bash(pytest:*)",
+      "Bash(ruff:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)",
+      "Read(./secrets/**)",
+      "Write(./migrations/**)",
+      "Write(./infra/**)",
+      "Write(./**/migrations/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "case \"$CLAUDE_TOOL_INPUT\" in *curl*|*wget*|*\" nc \"*) case \"$CLAUDE_TOOL_INPUT\" in *.env*|*secret*|*token*|*password*) echo 'Blocked: possible credential exfiltration' >&2; exit 2;; esac;; esac; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}

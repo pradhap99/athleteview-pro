@@ -1,0 +1,38 @@
+# Minors / child-labor rules — [RATE CARD], per-jurisdiction + effective-dated.
+#
+# ⚠️  ILLUSTRATIVE SAMPLE VALUES — NOT AUTHORITATIVE. Child-labor non-compliance is legal
+#     (even criminal) exposure. Replace with values verified against each jurisdiction's
+#     statutes before production use. CA and NY diverge materially. Coogan/blocked-trust is
+#     required in CA, NY, IL, LA, NM (percentages/custodian thresholds differ).
+#
+# Loaded by rules.minors (not by the RateCardLibrary — different shape).
+
+jurisdictions:
+  CA:
+    coogan_required: true
+    coogan_percent: 15
+    max_turnaround_hours: 12   # "no exceptions"
+    weekly_hours_cap: 48
+    age_bands:
+      - { label: "under_6mo", min_days: 0, max_days: 180, max_at_place_hours: 2.0, max_work_hours: 0.33 }
+      - { label: "6mo_to_1yr", min_years: 0, max_years: 2, max_at_place_hours: 4.0, max_work_hours: 2.0 }
+      - { label: "2_to_5", min_years: 2, max_years: 6, max_at_place_hours: 6.0, max_work_hours: 3.0 }
+      - { label: "6_to_8", min_years: 6, max_years: 9, max_at_place_hours: 8.0, max_work_hours: 4.0 }
+      - { label: "9_to_15", min_years: 9, max_years: 16, max_at_place_hours: 9.0, max_work_hours: 5.0 }
+      - { label: "16_to_17", min_years: 16, max_years: 18, max_at_place_hours: 10.0, max_work_hours: 6.0 }
+
+  NY:
+    coogan_required: true
+    coogan_percent: 15
+    max_turnaround_hours: 12
+    weekly_hours_cap: 48
+    age_bands:
+      - { label: "under_6mo", min_days: 0, max_days: 180, max_at_place_hours: 2.0, max_work_hours: 0.33 }
+      - { label: "6mo_to_2", min_years: 0, max_years: 2, max_at_place_hours: 4.0, max_work_hours: 2.0 }
+      - { label: "2_to_5", min_years: 2, max_years: 6, max_at_place_hours: 6.0, max_work_hours: 3.0 }
+      - { label: "6_to_11", min_years: 6, max_years: 12, max_at_place_hours: 8.5, max_work_hours: 4.5 }
+      - { label: "12_to_15", min_years: 12, max_years: 16, max_at_place_hours: 9.5, max_work_hours: 5.0 }
+      - { label: "16_to_17", min_years: 16, max_years: 18, max_at_place_hours: 10.0, max_work_hours: 6.0 }
+
+# Jurisdictions requiring a Coogan / blocked-trust account (for reference by the engine).
+coogan_states: [CA, NY, IL, LA, NM]

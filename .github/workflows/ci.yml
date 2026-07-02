@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: python (lint · typecheck · test · rate-card)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Set up Python
+        run: uv python install 3.11
+      - name: Install deps
+        run: |
+          uv venv .venv --python 3.11
+          uv pip install --python .venv -e ".[dev]"
+      - name: Rate-card guard (no hard-coded rates/thresholds)
+        run: .venv/bin/python scripts/check_no_hardcoded_rates.py
+      - name: Lint
+        run: |
+          .venv/bin/ruff check services ml evals
+          .venv/bin/ruff format --check services ml evals
+      - name: Typecheck
+        run: .venv/bin/pyright
+      - name: Test
+        run: .venv/bin/pytest
+
+  web:
+    name: web (typecheck · lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        # pnpm version comes from the "packageManager" field in package.json
+        # (specifying it here too makes action-setup error with ERR_PNPM_BAD_PM_VERSION).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm --filter @throughline/web typecheck
+      - name: Lint
+        run: pnpm --filter @throughline/web lint

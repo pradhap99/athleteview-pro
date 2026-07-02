@@ -1,0 +1,38 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Node / Next.js
+node_modules/
+apps/web/.next/
+apps/web/out/
+*.tsbuildinfo
+.pnpm-store/
+
+# Env & secrets — NEVER commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local data / media
+*.sqlite
+*.sqlite3
+*.db
+/data/
+/media/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

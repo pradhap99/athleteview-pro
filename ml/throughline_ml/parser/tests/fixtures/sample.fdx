@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<FinalDraft DocumentType="Script" Template="No" Version="5">
+  <Content>
+    <Paragraph Type="Scene Heading" Number="1"><Text>INT. OFFICE - DAY</Text></Paragraph>
+    <Paragraph Type="Action"><Text>MARIA types at a cluttered desk.</Text></Paragraph>
+    <Paragraph Type="Character"><Text>MARIA</Text></Paragraph>
+    <Paragraph Type="Dialogue"><Text>Done.</Text></Paragraph>
+    <Paragraph Type="Scene Heading" Number="2"><Text>EXT. ROOFTOP - NIGHT</Text></Paragraph>
+    <Paragraph Type="Action"><Text>Wind whips across the gravel.</Text></Paragraph>
+    <Paragraph Type="Character"><Text>SAM (O.S.)</Text></Paragraph>
+    <Paragraph Type="Dialogue"><Text>Up here.</Text></Paragraph>
+    <Paragraph Type="Character"><Text>MARIA</Text></Paragraph>
+    <Paragraph Type="Dialogue"><Text>How did you get up there?</Text></Paragraph>
+  </Content>
+</FinalDraft>

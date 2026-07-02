@@ -1,0 +1,80 @@
+[project]
+name = "throughline"
+version = "0.1.0"
+description = "Throughline — the AI-native live production graph for film/TV/commercial teams"
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "ortools>=9.14",
+    "python-dateutil>=2.9",
+    "pyyaml>=6.0",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+# Heavy / model-serving deps for AI-feature slices (breakdown NER/LLM, RAG, OCR).
+# Kept out of the base install so unit tests + CI stay fast and GPU-free.
+ai = [
+    "pdfplumber>=0.11",      # MIT — deterministic PDF text/layout (NOT PyMuPDF, which is AGPL)
+    "gliner>=0.2.13",        # Apache — zero-shot NER for element tagging
+    "spacy>=3.7",            # MIT
+    "presidio-analyzer>=2.2",# MIT — PII redaction before storage/model calls
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.6",
+    "pyright>=1.1.380",
+    "coverage>=7.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["services/api/throughline_api", "ml/throughline_ml"]
+
+[tool.uv]
+# Both first-party packages live in-tree; installed editable via `uv pip install -e .`.
+
+[tool.pytest.ini_options]
+pythonpath = ["services/api", "ml", "."]
+testpaths = ["services/api", "ml", "evals"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "-q --strict-markers"
+markers = [
+    "eval: eval-gate tests (run with `make evals`)",
+    "slow: slow tests (heavy deps / solver budget)",
+]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["services/api", "ml", "evals"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W"]
+ignore = [
+    "E501",   # line length handled by formatter
+    "UP042",  # `(str, Enum)` is a deliberate, broadly-compatible idiom
+]
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI requires `Depends(...)`/`Header(...)` calls in argument defaults (B008 is a
+# known false-positive for this framework idiom).
+"services/api/throughline_api/app.py" = ["B008"]
+
+[tool.pyright]
+include = ["services/api", "ml", "evals"]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+venvPath = "."
+venv = ".venv"

@@ -1,0 +1,38 @@
+{
+  "_note": "Golden scheduling instances with known feasible solutions (PRODUCT_SPEC §15.2). Regression asserts feasibility == 100% and no optimality-gap/solve-time regression.",
+  "instances": [
+    {
+      "name": "two-locations-clean",
+      "num_days": 2,
+      "capacity_eighths": null,
+      "scenes": [
+        {"id": "s1", "location": "STAGE_A", "cast": ["ALICE"], "page_eighths": 8},
+        {"id": "s2", "location": "STAGE_A", "cast": ["ALICE"], "page_eighths": 8},
+        {"id": "s3", "location": "PARK", "cast": ["BOB"], "page_eighths": 8},
+        {"id": "s4", "location": "PARK", "cast": ["BOB"], "page_eighths": 8}
+      ]
+    },
+    {
+      "name": "shared-cast-minimize-holds",
+      "num_days": 3,
+      "capacity_eighths": null,
+      "scenes": [
+        {"id": "s1", "location": "STAGE_A", "cast": ["ALICE"], "page_eighths": 8},
+        {"id": "s2", "location": "PARK", "cast": ["ALICE", "BOB"], "page_eighths": 8},
+        {"id": "s3", "location": "OFFICE", "cast": ["BOB"], "page_eighths": 8}
+      ]
+    },
+    {
+      "name": "capacity-constrained-feasible",
+      "num_days": 3,
+      "capacity_eighths": 16,
+      "scenes": [
+        {"id": "s1", "location": "STAGE_A", "cast": ["ALICE"], "page_eighths": 8},
+        {"id": "s2", "location": "STAGE_A", "cast": ["ALICE"], "page_eighths": 8},
+        {"id": "s3", "location": "PARK", "cast": ["BOB"], "page_eighths": 8},
+        {"id": "s4", "location": "PARK", "cast": ["CARLA"], "page_eighths": 8},
+        {"id": "s5", "location": "OFFICE", "cast": ["DEV"], "page_eighths": 8}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+# DGA rate cards — [RATE CARD] effective-dated data.
+#
+# ⚠️  ILLUSTRATIVE SAMPLE VALUES — NOT AUTHORITATIVE. Replace with values verified against
+#     the DGA Basic Agreement / Commercial Agreement before production use.
+#
+# DGA is modeled as a DAY-COUNT model (extra ½/full day at hour thresholds), architecturally
+# distinct from the hourly OT of SAG/IATSE. Turnaround differs by contract: 9h Basic vs
+# 8h Commercial.
+
+cards:
+  - union: DGA
+    contract: basic_agreement
+    tier: director
+    effective_date: "2020-07-01"
+    params:
+      overtime:
+        model: day_count
+        basis: elapsed
+        extra_half_day_after_hours: 12
+        extra_full_day_after_hours: 15
+      meal:
+        first_meal_within_hours: 6.0
+        interval_minutes: 30
+        penalty_ladder_usd: [0.0, 0.0, 0.0]   # DGA handles via day-count, not meal $ penalties
+      turnaround:
+        by_context:
+          studio: 9.0
+          studio_zone: 9.0
+          nearby: 9.0
+          distant_overnight: 9.0
+        rest_invasion_multiplier: 2.0
+      premium_days:
+        sixth_day_multiplier: 1.5
+        seventh_day_multiplier: 2.0
+
+  - union: DGA
+    contract: commercial_agreement
+    tier: director
+    effective_date: "2020-07-01"
+    params:
+      overtime:
+        model: day_count
+        basis: elapsed
+        extra_half_day_after_hours: 11
+        extra_full_day_after_hours: 14
+      meal:
+        first_meal_within_hours: 6.0
+        interval_minutes: 30
+        penalty_ladder_usd: [0.0, 0.0, 0.0]
+      turnaround:
+        by_context:
+          studio: 8.0
+          studio_zone: 8.0
+          nearby: 8.0
+          distant_overnight: 8.0
+        rest_invasion_multiplier: 2.0
+      premium_days:
+        sixth_day_multiplier: 1.5
+        seventh_day_multiplier: 2.0

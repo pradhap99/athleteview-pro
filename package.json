@@ -1,0 +1,14 @@
+{
+  "name": "throughline",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Throughline — the AI-native live production graph for film/TV/commercial teams",
+  "packageManager": "pnpm@9.12.0",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "pnpm --filter @throughline/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint"
+  }
+}
