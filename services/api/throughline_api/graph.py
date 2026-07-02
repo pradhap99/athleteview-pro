@@ -71,7 +71,16 @@ class GraphState:
     actuals: list[dict[str, Any]] = field(default_factory=list)
     commitments: list[dict[str, Any]] = field(default_factory=list)
     etc_overrides: dict[str, float] = field(default_factory=dict)  # account code -> ETC
+    purchase_orders: dict[str, dict[str, Any]] = field(default_factory=dict)
+    check_requests: dict[str, dict[str, Any]] = field(default_factory=dict)
+    petty_cash: dict[str, dict[str, Any]] = field(default_factory=dict)
+    revision_history: list[dict[str, Any]] = field(default_factory=list)
     proposed_diffs: dict[str, ProposedDiffState] = field(default_factory=dict)
+
+    @property
+    def pages_locked(self) -> bool:
+        """Scene numbering freezes once the first colored revision is released (§7A.4)."""
+        return bool(self.revision_history)
 
     def confirmed_elements(self) -> list[ElementState]:
         return [e for e in self.elements.values() if e.status == "confirmed"]
@@ -164,7 +173,88 @@ def _apply(state: GraphState, ev: Event) -> None:
         state.commitments.append(dict(p))
 
     elif kind == EventKind.ETC_SET:
-        state.etc_overrides[p["code"]] = float(p["amount"])  # type: ignore[attr-defined]
+        state.etc_overrides[p["code"]] = float(p["amount"])
+
+    # -- purchase orders: approved-uninvoiced = committed; invoiced = actual --
+
+    elif kind == EventKind.PO_CREATED:
+        state.purchase_orders[p["id"]] = {**p, "status": "draft", "receivedAmount": None}
+
+    elif kind == EventKind.PO_APPROVED:
+        po = state.purchase_orders.get(p["id"])
+        if po is not None:
+            po["status"] = "approved"
+            state.commitments.append(
+                {"code": po["code"], "amount": float(po["amount"]), "poId": po["id"]}
+            )
+
+    elif kind == EventKind.PO_RECEIVED:
+        po = state.purchase_orders.get(p["id"])
+        if po is not None:
+            po["receivedAmount"] = float(p["amount"])
+
+    elif kind == EventKind.PO_INVOICED:
+        po = state.purchase_orders.get(p["id"])
+        if po is not None:
+            po["status"] = "invoiced"
+            po["invoiceRef"] = p.get("invoiceRef", "")
+            state.commitments = [c for c in state.commitments if c.get("poId") != po["id"]]
+            state.actuals.append(
+                {"code": po["code"], "amount": float(p["amount"]), "poId": po["id"]}
+            )
+
+    elif kind == EventKind.PO_CANCELLED:
+        po = state.purchase_orders.get(p["id"])
+        if po is not None:
+            po["status"] = "cancelled"
+            state.commitments = [c for c in state.commitments if c.get("poId") != po["id"]]
+
+    # -- check requests: ordered sign-off chain; actual books on completion ----
+
+    elif kind == EventKind.CHECK_REQUEST_CREATED:
+        state.check_requests[p["id"]] = {**p, "status": "pending", "approvals": []}
+
+    elif kind == EventKind.CHECK_REQUEST_APPROVED:
+        req = state.check_requests.get(p["id"])
+        if req is not None:
+            req["approvals"].append({"approver": p["approver"], "role": p["role"]})
+            if len(req["approvals"]) >= len(req.get("chain", [])):
+                req["status"] = "approved"
+                state.actuals.append(
+                    {
+                        "code": req["code"],
+                        "amount": float(req["amount"]),
+                        "checkRequestId": req["id"],
+                    }
+                )
+
+    # -- petty cash: envelope model ---------------------------------------------
+
+    elif kind == EventKind.PETTY_CASH_ISSUED:
+        state.petty_cash[p["id"]] = {**p, "status": "open", "receipts": []}
+
+    elif kind == EventKind.PETTY_CASH_RECEIPT:
+        envelope = state.petty_cash.get(p["envelopeId"])
+        if envelope is not None:
+            envelope["receipts"].append(dict(p))
+            state.actuals.append(
+                {
+                    "code": p["code"],
+                    "amount": float(p["amount"]),
+                    "pettyCashId": p["envelopeId"],
+                }
+            )
+
+    elif kind == EventKind.PETTY_CASH_RECONCILED:
+        envelope = state.petty_cash.get(p["envelopeId"])
+        if envelope is not None:
+            envelope["status"] = "reconciled"
+            envelope["returnedCash"] = float(p["returnedCash"])
+
+    # -- colored-page revisions ---------------------------------------------------
+
+    elif kind == EventKind.SCRIPT_REVISION_RELEASED:
+        state.revision_history.append(dict(p))  # type: ignore[attr-defined]
 
     elif kind == EventKind.CHANGE_PROPOSED:
         diff_id = p.get("diffId") or p["id"]

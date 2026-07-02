@@ -13,6 +13,7 @@ import uuid
 from throughline_ml.parser import ParsedScript, diff_scripts, parse_script
 from throughline_ml.parser.types import IntExt, ParsedScene
 
+from .colored_pages import a_scene_number, before_scene_number
 from .graph import GraphState, ProposedDiffState
 
 
@@ -45,22 +46,50 @@ def propose_revision(
     id_by_number = {s.number: s.id for s in state.scenes.values()}
     changes: list[dict] = []
 
+    # Locked pages (§7A.4): after the first colored release, existing numbers never shift —
+    # inserted scenes get A-numbers from their positional neighbor (10 → 10A; before 1 → A1).
+    locked_numbers: dict[str, str] = {}
+    if state.pages_locked and script_diff.added:
+        old_numbers = set(id_by_number)
+        taken = set(old_numbers)
+        added_ids = {id(s) for s in script_diff.added}
+        for position, scene in enumerate(new.scenes):
+            if id(scene) not in added_ids:
+                continue
+            predecessor = next(
+                (
+                    prior.number
+                    for prior in reversed(new.scenes[:position])
+                    if prior.number in old_numbers
+                ),
+                None,
+            )
+            if predecessor is not None:
+                assigned = a_scene_number(predecessor, taken)
+            else:
+                follower = next(
+                    (nxt.number for nxt in new.scenes[position:] if nxt.number in old_numbers),
+                    scene.number,
+                )
+                assigned = before_scene_number(follower, taken)
+            taken.add(assigned)
+            locked_numbers[scene.number] = assigned
+
     for scene in script_diff.added:
-        changes.append(
-            {
-                "op": "add_scene",
-                "scene": {
-                    "id": f"sc-{uuid.uuid4().hex[:8]}",
-                    "number": scene.number,
-                    "intExt": scene.int_ext.value,
-                    "location": scene.location,
-                    "timeOfDay": scene.time_of_day,
-                    "heading": scene.heading,
-                    "pageEighths": scene.page_eighths,
-                    "characters": list(scene.characters),
-                },
-            }
-        )
+        number = locked_numbers.get(scene.number, scene.number)
+        payload = {
+            "id": f"sc-{uuid.uuid4().hex[:8]}",
+            "number": number,
+            "intExt": scene.int_ext.value,
+            "location": scene.location,
+            "timeOfDay": scene.time_of_day,
+            "heading": scene.heading,
+            "pageEighths": scene.page_eighths,
+            "characters": list(scene.characters),
+        }
+        if number != scene.number:
+            payload["renumberedFrom"] = scene.number  # locked pages: A-scene, no renumbering
+        changes.append({"op": "add_scene", "scene": payload})
     for scene in script_diff.removed:
         changes.append({"op": "remove_scene", "sceneId": id_by_number[scene.number]})
     for change in script_diff.changed:

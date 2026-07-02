@@ -61,3 +61,49 @@ class EtcReq(BaseModel):
 class ScriptDiffReq(BaseModel):
     text: str
     format: str | None = None
+
+
+class PoCreateReq(BaseModel):
+    code: str  # account code the commitment/actual books against
+    vendor: str
+    amount: float
+    memo: str = ""
+
+
+class PoReceiveReq(BaseModel):
+    amount: float  # goods-receipt amount (3-way match leg)
+
+
+class PoInvoiceReq(BaseModel):
+    amount: float
+    invoiceRef: str = ""
+
+
+class CheckRequestCreateReq(BaseModel):
+    code: str
+    amount: float
+    payee: str
+    chain: list[str] = ["dept_head", "upm"]  # ordered sign-off roles
+
+
+class CheckRequestApproveReq(BaseModel):
+    role: str  # must match the next step in the chain
+
+
+class PettyCashIssueReq(BaseModel):
+    custodian: str
+    floatAmount: float
+
+
+class PettyCashReceiptReq(BaseModel):
+    code: str
+    amount: float
+    memo: str = ""
+
+
+class PettyCashReconcileReq(BaseModel):
+    returnedCash: float
+
+
+class RevisionReleaseReq(BaseModel):
+    note: str = ""

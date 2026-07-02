@@ -104,6 +104,13 @@ This repo is being built **one eval-gated vertical slice at a time** (see
 - **1.3 (server half)** — script revision diff: re-importing a revised draft yields an
   element-level proposed diff (scenes added/removed/changed, character adds/drops) that
   applies only on human confirm.
+- **5.4 POs / check requests / petty cash** — approved-uninvoiced PO = committed cost;
+  goods receipt + invoice complete a 3-way match (mismatches refused with all three legs
+  cited) → actual; check requests route an ordered sign-off chain; petty-cash envelopes
+  reconcile to the cent. All of it event-sourced, all of it visible in the cost report.
+- **6.1 Colored-page revisions** — White→Blue→…→Tan→Double White order enforced;
+  releasing a revision locks pages (inserted scenes become 10A/A1 — existing numbers
+  never shift); auto asterisk revision marks; slug + history on the graph.
 
 AI-model slices (breakdown NER/LLM, RAG grounded Q&A, OCR actuals) are **scaffolded** —
 seams, versioned prompts, and eval harnesses are in place; they require a model-serving

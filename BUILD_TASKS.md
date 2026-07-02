@@ -181,14 +181,25 @@ Convention per task — **Goal · Touch · Out of scope · Acceptance criteria �
 - **Verify:** cost-report reconciliation tests; hot-costs regenerate from a fixture
   Exhibit G; fringe-cap tests.
 
-### 5.4 POs / commitments / check requests / petty cash — ⬜
+### 5.4 POs / commitments / check requests / petty cash — ✅
+- **AC met:** approved-uninvoiced PO = committed (feeds the cost report), goods receipt +
+  invoice complete a **3-way match** (mismatch → refused, all three legs cited) → actual;
+  check requests route through an ordered sign-off chain (dept head → UPM → …), booking
+  only on completion; petty-cash envelopes reconcile to the cent (receipts + returned =
+  float) and refuse further receipts once reconciled.
+
 ### 5.5 Exhibit G + cost-coded timecards + start packets + payroll handoff — ⬜
 
 ---
 
 ## EPIC 6 — Production workflow table stakes (P0/P1)
 
-### 6.1 Colored-page script revisions (P0) — ⬜
+### 6.1 Colored-page script revisions (P0) — ✅ (revision clouds / as-broadcast export = P2, out of scope)
+- **AC met:** color order White→Blue→…→Tan→Double White→Triple… enforced; releasing a
+  revision **locks pages** — scenes inserted after N become NA/NB and before the first
+  become A1 (existing numbers never shift), applied automatically to revision diffs;
+  auto revision-mark asterisks on changed lines (deterministic line diff); revision slug
+  (color + date) + full history on the graph.
 ### 6.2 Sides + secure watermarked distribution (P0) — ⬜
 ### 6.3 Location management (P0) — ⬜
 ### 6.4 Cast & crew DB + deal memos + e-signature (P0) — ⬜
