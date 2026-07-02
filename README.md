@@ -111,6 +111,12 @@ This repo is being built **one eval-gated vertical slice at a time** (see
 - **6.1 Colored-page revisions** — White→Blue→…→Tan→Double White order enforced;
   releasing a revision locks pages (inserted scenes become 10A/A1 — existing numbers
   never shift); auto asterisk revision marks; slug + history on the graph.
+- **5.5 Timecards + Exhibit G + payroll** — deal memos drive rates; timecards price
+  against the rules engine (auto-recalc on read) and split across account codes with no
+  cent drift; Exhibit G renders the guild form (tenths, MPV count, forced call, minor
+  flag, e-signature) and is the same feed hot costs regenerate from; approved timecards
+  export payroll-ready (EP/Cast&Crew/Wrapbook) with box/kit taxability and a union P&H
+  wage-base summary.
 
 AI-model slices (breakdown NER/LLM, RAG grounded Q&A, OCR actuals) are **scaffolded** —
 seams, versioned prompts, and eval harnesses are in place; they require a model-serving

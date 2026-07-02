@@ -188,7 +188,16 @@ Convention per task — **Goal · Touch · Out of scope · Acceptance criteria �
   only on completion; petty-cash envelopes reconcile to the cent (receipts + returned =
   float) and refuse further receipts once reconciled.
 
-### 5.5 Exhibit G + cost-coded timecards + start packets + payroll handoff — ⬜
+### 5.5 Exhibit G + cost-coded timecards + start packets + payroll handoff — ✅ (MM budget/schedule round-trip stays deferred pending legal review)
+- **AC met:** Exhibit G renders to the guild form (status codes W/SW/SWF/WF/H/T/TR/R/F,
+  report/dismiss, tenths of an hour, MPV count + forced-call from the rules engine, minor
+  flag, wardrobe/stunt adjustments, performer e-signature) and is the feed hot costs
+  regenerate from; timecards compute against the rules engine (auto-recalc on read),
+  split across account codes without cent drift, and route an ordered approval chain;
+  deal memos/start packets are structured events with box/kit as a separate
+  taxability-flagged line (accountable plan → non-taxable); approved timecards export in
+  a payroll-ready schema (EP / Cast&Crew / Wrapbook) with wage-type breakdown + cost
+  codes + union P&H wage-base summary.
 
 ---
 

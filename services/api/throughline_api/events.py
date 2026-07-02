@@ -45,6 +45,12 @@ class EventKind:
     PETTY_CASH_RECONCILED = "petty_cash.reconciled"
     # Colored-page script revisions (task 6.1).
     SCRIPT_REVISION_RELEASED = "script_revision.released"
+    # Timecards / start paperwork / Exhibit G (task 5.5).
+    DEAL_MEMO_CREATED = "deal_memo.created"  # structured start paperwork; latest wins
+    START_PACKET_UPDATED = "start_packet.updated"  # W-4/W-9/I-9/direct-deposit checklist
+    TIMECARD_SUBMITTED = "timecard.submitted"
+    TIMECARD_APPROVED = "timecard.approved"  # ordered chain, like check requests
+    EXHIBIT_G_SIGNED = "exhibit_g.signed"  # performer e-signature per (person, date)
     CHANGE_PROPOSED = "change.proposed"  # a reviewable diff — NOT applied
     CHANGE_CONFIRMED = "change.confirmed"  # HUMAN action — applies the diff
     CHANGE_REJECTED = "change.rejected"

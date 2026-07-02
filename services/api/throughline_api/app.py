@@ -26,15 +26,17 @@ from .accounting import (
     require_next_approver,
     require_po_transition,
 )
-from .budget import build_cost_report, line_from_payload
+from .budget import build_cost_report, compute_hot_costs, line_from_payload
 from .budget.model import BudgetLine, Fringe
 from .colored_pages import next_color, revision_slug
 from .config import settings
 from .db import init_db, make_engine, make_session_factory
 from .events import EventKind, append_event, list_events
+from .exhibit_g import build_exhibit_g, render_exhibit_g_text
 from .graph import GraphState, reconstruct
 from .ingest import ingest_script
 from .interop import to_aicp, to_aicp_csv
+from .payroll import build_payroll_export
 from .propagation import (
     apply_change,
     diff_to_dict,
@@ -44,15 +46,19 @@ from .propagation import (
 )
 from .rbac import AuthzError, NotFoundError, Principal, authorize_project, require_write
 from .revision import propose_revision
+from .rules import RulesEngine
 from .schemas import (
     BudgetLineReq,
     CheckRequestApproveReq,
     CheckRequestCreateReq,
     CreateProjectReq,
+    DealMemoReq,
     EtcReq,
+    ExhibitGSignReq,
     ImportScriptReq,
     LedgerEntryReq,
     OptimizeReq,
+    PayrollExportReq,
     PettyCashIssueReq,
     PettyCashReceiptReq,
     PettyCashReconcileReq,
@@ -62,6 +68,17 @@ from .schemas import (
     RescheduleChangeReq,
     RevisionReleaseReq,
     ScriptDiffReq,
+    StartPacketReq,
+    TimecardApproveReq,
+    TimecardSubmitReq,
+)
+from .timecard_service import (
+    TimecardError,
+    calc_to_dict,
+    compute_for_state,
+    daywork_from_timecard,
+    memo_for,
+    resolve_card,
 )
 
 
@@ -113,6 +130,7 @@ def create_app(session_factory: sessionmaker | None = None) -> FastAPI:
 
     app = FastAPI(title=settings.app_name, version=settings.version)
     app.state.session_factory = session_factory
+    rules_engine = RulesEngine()  # loads the effective-dated rate-card tables once
 
     def get_session() -> Iterator[Session]:
         session = session_factory()
@@ -164,7 +182,7 @@ def create_app(session_factory: sessionmaker | None = None) -> FastAPI:
             project_id=project_id,
             actor=principal.user_id,
             kind=EventKind.PROJECT_CREATED,
-            payload={"title": body.title, "type": body.type},
+            payload={"title": body.title, "type": body.type, "ppStartDate": body.ppStartDate},
         )
         session.commit()
         return {"id": project_id, "title": body.title, "type": body.type}
@@ -754,6 +772,221 @@ def create_app(session_factory: sessionmaker | None = None) -> FastAPI:
             {"envelopeId": env_id, "returnedCash": body.returnedCash},
         )
         return {"envelopeId": env_id, "status": "reconciled"}
+
+    # -- deal memos / timecards / Exhibit G / payroll (task 5.5) ---------------
+
+    @app.post("/v1/projects/{project_id}/deal-memos", status_code=201)
+    def create_deal_memo(
+        project_id: str,
+        body: DealMemoReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        org = _write_ctx(session, principal, project_id)
+        payload = body.model_dump()
+        # Validate the union/contract/tier resolves to a real rate card up front.
+        state = reconstruct(session, project_id)
+        try:
+            resolve_card(
+                rules_engine, state, payload, body.startDate or dt.date.today().isoformat()
+            )
+        except LookupError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        _commit_event(
+            session, org, project_id, principal.user_id, EventKind.DEAL_MEMO_CREATED, payload
+        )
+        return {"person": body.person, "union": body.union, "hourlyRate": body.hourlyRate}
+
+    @app.post("/v1/projects/{project_id}/start-packets/{person}")
+    def update_start_packet(
+        project_id: str,
+        person: str,
+        body: StartPacketReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        org = _write_ctx(session, principal, project_id)
+        _commit_event(
+            session,
+            org,
+            project_id,
+            principal.user_id,
+            EventKind.START_PACKET_UPDATED,
+            {"person": person, "forms": body.forms},
+        )
+        packet = reconstruct(session, project_id).start_packets[person]
+        return {"person": person, "forms": packet["forms"]}
+
+    @app.post("/v1/projects/{project_id}/timecards", status_code=201)
+    def submit_timecard(
+        project_id: str,
+        body: TimecardSubmitReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        org = _write_ctx(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        tc_id = f"tc-{uuid.uuid4().hex[:12]}"
+        payload = {"id": tc_id, **body.model_dump()}
+        try:
+            # Validate now (memo exists, datetimes parse, card resolves) — compute on read.
+            memo_for(state, body.person)
+            daywork_from_timecard(payload)
+            calc = compute_for_state(state, rules_engine, payload)
+        except TimecardError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        except LookupError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        _commit_event(
+            session, org, project_id, principal.user_id, EventKind.TIMECARD_SUBMITTED, payload
+        )
+        return {"id": tc_id, "status": "submitted", "computed": calc_to_dict(calc)}
+
+    @app.post("/v1/projects/{project_id}/timecards/{tc_id}:approve")
+    def approve_timecard(
+        project_id: str,
+        tc_id: str,
+        body: TimecardApproveReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        org = _write_ctx(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        try:
+            require_next_approver(state.timecards.get(tc_id), body.role)
+        except AccountingError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+        _commit_event(
+            session,
+            org,
+            project_id,
+            principal.user_id,
+            EventKind.TIMECARD_APPROVED,
+            {"id": tc_id, "approver": principal.user_id, "role": body.role},
+        )
+        tc = reconstruct(session, project_id).timecards[tc_id]
+        return {"id": tc_id, "status": tc["status"], "approvals": tc["approvals"]}
+
+    @app.get("/v1/projects/{project_id}/timecards/{tc_id}")
+    def get_timecard(
+        project_id: str,
+        tc_id: str,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        _authz(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        tc = state.timecards.get(tc_id)
+        if tc is None:
+            raise HTTPException(status_code=404, detail="timecard not found")
+        # Computed fresh on every read — memo/rate-card changes auto-recalculate.
+        calc = compute_for_state(state, rules_engine, tc)
+        return {**tc, "computed": calc_to_dict(calc)}
+
+    @app.get("/v1/projects/{project_id}/exhibit-g")
+    def get_exhibit_g(
+        project_id: str,
+        date: str = Query(..., description="shoot date (ISO)"),
+        format: str = Query(default="json", pattern="^(json|text)$"),
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> Any:
+        _authz(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        rows = build_exhibit_g(state, rules_engine, date)
+        if format == "text":
+            return PlainTextResponse(render_exhibit_g_text(rows, production=state.title))
+        return {"date": date, "rows": rows}
+
+    @app.post("/v1/projects/{project_id}/exhibit-g/{person}:sign")
+    def sign_exhibit_g(
+        project_id: str,
+        person: str,
+        body: ExhibitGSignReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        org = _write_ctx(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        if not any(
+            tc["person"] == person and tc["date"] == body.date for tc in state.timecards.values()
+        ):
+            raise HTTPException(status_code=404, detail="no timecard for that person/date")
+        _commit_event(
+            session,
+            org,
+            project_id,
+            principal.user_id,
+            EventKind.EXHIBIT_G_SIGNED,
+            {
+                "person": person,
+                "date": body.date,
+                "signedBy": principal.user_id,
+                "signedAt": dt.datetime.now(dt.UTC).isoformat(),
+            },
+        )
+        return {"person": person, "date": body.date, "signed": True}
+
+    @app.get("/v1/projects/{project_id}/hot-costs")
+    def hot_costs(
+        project_id: str,
+        date: str = Query(..., description="prior shoot date (ISO)"),
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        """Daily hot costs regenerated from the date's timecards (the Exhibit G feed)."""
+        _authz(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        day_tcs = [tc for tc in state.timecards.values() if tc.get("date") == date]
+        if not day_tcs:
+            return {
+                "date": date,
+                "lines": [],
+                "totalBudgeted": 0.0,
+                "totalActual": 0.0,
+                "totalVariance": 0.0,
+            }
+        # Group by resolved rate card so mixed-union days price correctly.
+        lines = []
+        for tc in day_tcs:
+            memo = memo_for(state, tc["person"])
+            card = resolve_card(rules_engine, state, memo, tc["date"])
+            budgeted = round(float(memo["hourlyRate"]) * float(memo["guaranteedHours"]), 2)
+            report = compute_hot_costs(
+                [daywork_from_timecard(tc)],
+                engine=rules_engine,
+                card=card,
+                hourly_rates={tc["person"]: float(memo["hourlyRate"])},
+                budgeted={tc["person"]: budgeted},
+            )
+            lines.extend(report.lines)
+        return {
+            "date": date,
+            "lines": [line.__dict__ for line in lines],
+            "totalBudgeted": round(sum(line.budgeted for line in lines), 2),
+            "totalActual": round(sum(line.total for line in lines), 2),
+            "totalVariance": round(sum(line.variance for line in lines), 2),
+        }
+
+    @app.post("/v1/projects/{project_id}/payroll:export")
+    def payroll_export(
+        project_id: str,
+        body: PayrollExportReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        _authz(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        try:
+            return build_payroll_export(
+                state,
+                rules_engine,
+                provider=body.provider,
+                start_date=body.startDate,
+                end_date=body.endDate,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
 
     # -- colored-page revisions (task 6.1) ------------------------------------
 

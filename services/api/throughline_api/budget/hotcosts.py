@@ -14,7 +14,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ..rules.engine import DayWork, Flag, RateCard, RulesEngine
+from ..rules.engine import DayWork, RateCard, RulesEngine
+from .flag_pricing import day_premium, meal_penalty_amount, ot_premium, rest_invasion_premium
 
 
 @dataclass
@@ -48,33 +49,6 @@ class HotCostReport:
         return round(self.total_budgeted - self.total_actual, 2)
 
 
-def _ot_premium(flag: Flag, hourly_rate: float) -> float:
-    """Extra dollars beyond straight time for an hourly-model OT flag.
-
-    All parameters come from the flag: hours worked, the table threshold it crossed, and
-    the multiplier — extra = (hours − threshold) × rate × (multiplier − 1).
-    """
-    if "multiplier" not in flag.computed:  # day-count model (DGA) — handled in task 5.5
-        return 0.0
-    hours = float(flag.computed["hours"])
-    threshold = float(flag.rule_ref.threshold)
-    multiplier = float(flag.computed["multiplier"])
-    return round(max(0.0, hours - threshold) * hourly_rate * (multiplier - 1.0), 2)
-
-
-def _rest_invasion(flag: Flag, hourly_rate: float) -> float:
-    """Invaded rest hours are paid at the table's rest-invasion multiplier."""
-    invaded = float(flag.computed["required_hours"]) - float(flag.computed["rest_hours"])
-    multiplier = float(flag.computed["penalty_multiplier"])
-    return round(max(0.0, invaded) * hourly_rate * (multiplier - 1.0), 2)
-
-
-def _day_premium(flag: Flag, work: DayWork, hourly_rate: float) -> float:
-    """6th/7th-day premium: the whole day's worked hours step up to the table multiplier."""
-    multiplier = float(flag.computed["multiplier"])
-    return round(work.worked_hours() * hourly_rate * (multiplier - 1.0), 2)
-
-
 def compute_hot_costs(
     day_works: list[DayWork],
     *,
@@ -93,13 +67,13 @@ def compute_hot_costs(
         explanations: list[str] = []
         for flag in flags:
             if flag.kind == "overtime":
-                ot += _ot_premium(flag, rate)
+                ot += ot_premium(flag, rate)
             elif flag.kind == "meal_penalty":
-                meals += float(flag.computed["penalty_usd"])
+                meals += meal_penalty_amount(flag)
             elif flag.kind == "turnaround":
-                rest += _rest_invasion(flag, rate)
+                rest += rest_invasion_premium(flag, rate)
             elif flag.kind in ("sixth_day", "seventh_day"):
-                premium += _day_premium(flag, work, rate)
+                premium += day_premium(flag, work, rate)
             explanations.append(flag.explain())
         total = round(base + ot + meals + rest + premium, 2)
         budget_amount = float(budgeted.get(work.person, 0.0))

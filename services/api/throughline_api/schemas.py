@@ -8,6 +8,7 @@ from pydantic import BaseModel
 class CreateProjectReq(BaseModel):
     title: str
     type: str = "scripted"  # scripted | commercial | episodic
+    ppStartDate: str | None = None  # ISO date; keys effective-dated rate-card resolution
 
 
 class ImportScriptReq(BaseModel):
@@ -107,3 +108,65 @@ class PettyCashReconcileReq(BaseModel):
 
 class RevisionReleaseReq(BaseModel):
     note: str = ""
+
+
+class DealMemoReq(BaseModel):
+    person: str
+    legalName: str = ""
+    department: str = ""
+    union: str  # e.g. SAG-AFTRA | IATSE | Teamsters | DGA
+    contract: str  # e.g. theatrical | basic_agreement
+    tier: str  # e.g. day_performer | crew | driver
+    hourlyRate: float
+    guaranteedHours: float  # daily guarantee — budgeted basis for hot costs
+    accountCode: str
+    startDate: str = ""  # ISO date
+    isMinor: bool = False
+    boxKitRate: float | None = None
+    boxKitCadence: str = "daily"  # daily | weekly
+    boxKitAccountablePlan: bool = False  # accountable plan → non-taxable reimbursement
+    boxKitAccountCode: str | None = None
+
+
+class StartPacketReq(BaseModel):
+    forms: dict[str, bool]  # e.g. {"w4": true, "i9": true, "directDeposit": false}
+
+
+class MealBreakReq(BaseModel):
+    start: str  # ISO datetime
+    end: str
+
+
+class TimecardAdjustmentReq(BaseModel):
+    type: str  # wardrobe | stunt | other
+    amount: float
+    code: str | None = None
+
+
+class TimecardSubmitReq(BaseModel):
+    person: str
+    date: str  # ISO date
+    call: str  # ISO datetime
+    wrap: str
+    meals: list[MealBreakReq] = []
+    locationContext: str = "studio"
+    dayInWeek: int = 1
+    priorWrap: str | None = None
+    workStatusCode: str = "W"  # Exhibit G status code
+    splits: list[dict] = []  # [{code, weight}] — defaults to the memo's account code
+    adjustments: list[TimecardAdjustmentReq] = []
+    chain: list[str] = ["dept_head", "upm"]  # ordered approval roles
+
+
+class TimecardApproveReq(BaseModel):
+    role: str
+
+
+class ExhibitGSignReq(BaseModel):
+    date: str  # ISO date being signed
+
+
+class PayrollExportReq(BaseModel):
+    provider: str = "wrapbook"  # ep | castandcrew | wrapbook
+    startDate: str
+    endDate: str

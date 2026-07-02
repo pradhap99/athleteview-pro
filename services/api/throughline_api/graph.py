@@ -75,6 +75,11 @@ class GraphState:
     check_requests: dict[str, dict[str, Any]] = field(default_factory=dict)
     petty_cash: dict[str, dict[str, Any]] = field(default_factory=dict)
     revision_history: list[dict[str, Any]] = field(default_factory=list)
+    pp_start_date: str = ""  # principal-photography start — keys rate-card resolution
+    deal_memos: dict[str, dict[str, Any]] = field(default_factory=dict)  # person -> memo
+    start_packets: dict[str, dict[str, Any]] = field(default_factory=dict)  # person -> forms
+    timecards: dict[str, dict[str, Any]] = field(default_factory=dict)
+    exhibit_g_signatures: dict[str, dict[str, Any]] = field(default_factory=dict)  # person:date
     proposed_diffs: dict[str, ProposedDiffState] = field(default_factory=dict)
 
     @property
@@ -97,6 +102,7 @@ def _apply(state: GraphState, ev: Event) -> None:
         state.org_id = ev.org_id
         state.title = p.get("title", "")
         state.project_type = p.get("type", "")
+        state.pp_start_date = p.get("ppStartDate") or ""
 
     elif kind == EventKind.SCENE_ADDED:
         state.scenes[p["id"]] = SceneState(
@@ -254,7 +260,35 @@ def _apply(state: GraphState, ev: Event) -> None:
     # -- colored-page revisions ---------------------------------------------------
 
     elif kind == EventKind.SCRIPT_REVISION_RELEASED:
-        state.revision_history.append(dict(p))  # type: ignore[attr-defined]
+        state.revision_history.append(dict(p))
+
+    # -- timecards / start paperwork / Exhibit G (task 5.5) -----------------------
+
+    elif kind == EventKind.DEAL_MEMO_CREATED:
+        state.deal_memos[p["person"]] = dict(p)  # latest memo wins
+
+    elif kind == EventKind.START_PACKET_UPDATED:
+        packet = state.start_packets.setdefault(p["person"], {"person": p["person"], "forms": {}})
+        packet["forms"].update(p.get("forms", {}))
+
+    elif kind == EventKind.TIMECARD_SUBMITTED:
+        state.timecards[p["id"]] = {**p, "status": "submitted", "approvals": []}
+
+    elif kind == EventKind.TIMECARD_APPROVED:
+        tc = state.timecards.get(p["id"])
+        if tc is not None:
+            tc["approvals"].append({"approver": p["approver"], "role": p["role"]})
+            if len(tc["approvals"]) >= len(tc.get("chain", [])):
+                tc["status"] = "approved"
+
+    elif kind == EventKind.EXHIBIT_G_SIGNED:
+        key = f"{p['person']}:{p['date']}"
+        state.exhibit_g_signatures[key] = {
+            "person": p["person"],
+            "date": p["date"],
+            "signedBy": p.get("signedBy", p["person"]),
+            "signedAt": p.get("signedAt", ""),
+        }  # type: ignore[attr-defined]
 
     elif kind == EventKind.CHANGE_PROPOSED:
         diff_id = p.get("diffId") or p["id"]
