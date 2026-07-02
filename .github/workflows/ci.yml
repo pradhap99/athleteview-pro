@@ -40,8 +40,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+        # pnpm version comes from the "packageManager" field in package.json
+        # (specifying it here too makes action-setup error with ERR_PNPM_BAD_PM_VERSION).
       - uses: actions/setup-node@v4
         with:
           node-version: 22
