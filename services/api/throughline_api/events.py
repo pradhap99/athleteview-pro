@@ -59,6 +59,15 @@ class EventKind:
     # Locations (task 6.3).
     LOCATION_ADDED = "location.added"
     LOCATION_DOC_ADDED = "location_doc.added"  # release | permit | COI (w/ expiry + limit)
+    # Org-scoped crew directory + templates (task 6.4) — live on the org stream.
+    CONTACT_UPSERTED = "contact.upserted"
+    DEAL_MEMO_TEMPLATE_SAVED = "deal_memo_template.saved"
+    # E-signature (task 6.4) — ordered signing, per-signer events.
+    SIGNATURE_REQUEST_CREATED = "signature_request.created"
+    SIGNATURE_SIGNED = "signature.signed"
+    # Call sheets (task 4.1).
+    CALL_SHEET_PUBLISHED = "call_sheet.published"
+    CALL_SHEET_ACKED = "call_sheet.acknowledged"
     CHANGE_PROPOSED = "change.proposed"  # a reviewable diff — NOT applied
     CHANGE_CONFIRMED = "change.confirmed"  # HUMAN action — applies the diff
     CHANGE_REJECTED = "change.rejected"
@@ -101,3 +110,26 @@ def org_of(session: Session, project_id: str) -> str | None:
     return session.execute(
         select(Event.org_id).where(Event.project_id == project_id).order_by(Event.id).limit(1)
     ).scalar()
+
+
+def org_stream_id(org_id: str) -> str:
+    """The pseudo-project stream carrying org-scoped events (contacts, templates).
+
+    Cross-project data (the reusable crew DB, deal-memo templates) lives on one stream
+    per org so it is shared by every show in the org and isolated from other tenants.
+    """
+    return f"org:{org_id}"
+
+
+def list_org_events(
+    session: Session, org_id: str, *, kinds: tuple[str, ...] | None = None
+) -> list[Event]:
+    """All events across an org's projects (and its org stream), oldest first.
+
+    Powers cross-project features: engagement history (deal memos across shows),
+    vendor/crew economics — the moat that compounds between productions.
+    """
+    stmt = select(Event).where(Event.org_id == org_id)
+    if kinds:
+        stmt = stmt.where(Event.kind.in_(kinds))
+    return list(session.execute(stmt.order_by(Event.id)).scalars())

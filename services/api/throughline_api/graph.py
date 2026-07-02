@@ -83,6 +83,8 @@ class GraphState:
     exhibit_g_signatures: dict[str, dict[str, Any]] = field(default_factory=dict)  # person:date
     sides_links: dict[str, dict[str, Any]] = field(default_factory=dict)
     locations: dict[str, dict[str, Any]] = field(default_factory=dict)
+    signature_requests: dict[str, dict[str, Any]] = field(default_factory=dict)
+    call_sheets: dict[str, dict[str, Any]] = field(default_factory=dict)
     proposed_diffs: dict[str, ProposedDiffState] = field(default_factory=dict)
 
     @property
@@ -328,7 +330,38 @@ def _apply(state: GraphState, ev: Event) -> None:
     elif kind == EventKind.LOCATION_DOC_ADDED:
         location = state.locations.get(p["locationId"])
         if location is not None:
-            location["documents"].append(dict(p))  # type: ignore[attr-defined]
+            location["documents"].append(dict(p))
+
+    # -- e-signature (task 6.4) ------------------------------------------------------
+
+    elif kind == EventKind.SIGNATURE_REQUEST_CREATED:
+        state.signature_requests[p["id"]] = {**p, "status": "pending", "signed": []}
+
+    elif kind == EventKind.SIGNATURE_SIGNED:
+        request = state.signature_requests.get(p["id"])
+        if request is not None:
+            request["signed"].append({"signer": p["signer"], "at": p.get("at", "")})
+            if len(request["signed"]) >= len(request.get("signers", [])):
+                request["status"] = "complete"
+
+    # -- call sheets (task 4.1) --------------------------------------------------------
+
+    elif kind == EventKind.CALL_SHEET_PUBLISHED:
+        sheet = {**p, "supersededBy": None}
+        # A new revision for the same day supersedes every prior revision of that day.
+        for prior in state.call_sheets.values():
+            if prior["dayIndex"] == p["dayIndex"] and prior.get("supersededBy") is None:
+                prior["supersededBy"] = p["id"]
+        state.call_sheets[p["id"]] = sheet
+
+    elif kind == EventKind.CALL_SHEET_ACKED:
+        sheet = state.call_sheets.get(p["id"])
+        if sheet is not None:
+            for recipient in sheet.get("recipients", []):
+                if recipient.get("ackToken") == p.get("ackToken") and not recipient.get(
+                    "acknowledgedAt"
+                ):
+                    recipient["acknowledgedAt"] = p.get("at", "")  # type: ignore[attr-defined]
 
     elif kind == EventKind.CHANGE_PROPOSED:
         diff_id = p.get("diffId") or p["id"]

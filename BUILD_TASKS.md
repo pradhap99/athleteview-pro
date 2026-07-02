@@ -122,11 +122,14 @@ Convention per task — **Goal · Touch · Out of scope · Acceptance criteria �
 
 ## EPIC 4 — On set + the loop (P1→P2)
 
-### 4.1 Call sheets + delivery/ack tracking + per-role copilots — ⬜
-- **AC:** call sheets auto-populate from graph (cast/scenes/times/location/weather);
-  delivery+ack tracked per recipient; revision supersedes + re-notifies affected only;
-  viewers need no paid seat; copilots surface role-specific nudges.
-- **Verify:** e2e publish→ack; copilot nudge unit tests.
+### 4.1 Call sheets + delivery/ack tracking + per-role copilots — ✅ (weather = provider seam; LLM phrasing of nudges = ml seam)
+- **AC met:** call sheets auto-populate from the graph — day's scenes in order, cast with
+  DOOD codes, location day-info (sun/magic hour/hospital/parking via 6.3), company move
+  into the day; per-recipient ack tokens (viewers need no seat) with delivery tracking; a
+  re-publish supersedes the prior revision and **re-notifies only recipients whose own
+  day changed** (identical re-publish notifies no one; a call-time change notifies all);
+  deterministic per-role copilots (coordinator: unacked chase; 1st AD: company moves;
+  LP: accounts trending over) — every nudge cites its graph fact.
 
 ### 4.2 Mobile offline + live wrap loop (P2) — ⬜
 - **AC:** AD taps scenes complete + DIT confirms footage → schedule reflows,
@@ -223,7 +226,13 @@ Convention per task — **Goal · Touch · Out of scope · Acceptance criteria �
   sunrise/sunset + magic hour (±few min, unit-tested against known LA values) +
   parking/basecamp/nearest-24h-hospital as the call-sheet day-info block; company moves
   derived from consecutive schedule days with different primary locations.
-### 6.4 Cast & crew DB + deal memos + e-signature (P0) — ⬜
+### 6.4 Cast & crew DB + deal memos + e-signature (P0) — ✅
+- **AC met:** org-scoped cross-project contacts DB (person once, reused across shows;
+  roles/union/agency/default rates; **engagement history assembled from deal memos across
+  every show in the org**); deal-memo templates merge defaults into new memos (explicit
+  values win, missing terms 422); start packets per hire (5.5); e-signature with an
+  ORDERED signing chain, out-of-order refusal, completion state, and a pending/reminders
+  feed (who's next, waiting since).
 ### 6.5 Tax-incentive estimator (P1) — ⬜
 ### 6.6 Clearances / cue sheets / releases; safety; green (P1/P2) — ⬜
 

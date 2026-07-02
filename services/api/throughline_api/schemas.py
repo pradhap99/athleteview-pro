@@ -114,18 +114,21 @@ class DealMemoReq(BaseModel):
     person: str
     legalName: str = ""
     department: str = ""
-    union: str  # e.g. SAG-AFTRA | IATSE | Teamsters | DGA
-    contract: str  # e.g. theatrical | basic_agreement
-    tier: str  # e.g. day_performer | crew | driver
-    hourlyRate: float
-    guaranteedHours: float  # daily guarantee — budgeted basis for hot costs
-    accountCode: str
+    # Core terms may come from a template (templateId) — explicit values always win.
+    union: str | None = None  # e.g. SAG-AFTRA | IATSE | Teamsters | DGA
+    contract: str | None = None  # e.g. theatrical | basic_agreement
+    tier: str | None = None  # e.g. day_performer | crew | driver
+    hourlyRate: float | None = None
+    guaranteedHours: float | None = None  # daily guarantee — budgeted basis for hot costs
+    accountCode: str | None = None
     startDate: str = ""  # ISO date
     isMinor: bool = False
     boxKitRate: float | None = None
     boxKitCadence: str = "daily"  # daily | weekly
     boxKitAccountablePlan: bool = False  # accountable plan → non-taxable reimbursement
     boxKitAccountCode: str | None = None
+    templateId: str | None = None  # org deal-memo template to merge defaults from
+    contactId: str | None = None  # link to the org crew DB (fills names, feeds history)
 
 
 class StartPacketReq(BaseModel):
@@ -199,3 +202,41 @@ class LocationDocReq(BaseModel):
     liabilityLimit: float | None = None  # COI
     additionalInsured: str | None = None  # COI endorsement
     reference: str = ""  # external doc pointer (vault object key)
+
+
+class ContactReq(BaseModel):
+    name: str
+    email: str = ""
+    phone: str = ""
+    roles: list[str] = []  # e.g. ["Key Grip", "Best Boy"]
+    union: str | None = None
+    agency: str | None = None
+    defaultHourlyRate: float | None = None
+    notes: str = ""
+    id: str | None = None  # set to update an existing contact (upsert)
+
+
+class DealMemoTemplateReq(BaseModel):
+    name: str  # e.g. "IATSE crew day-player"
+    defaults: dict  # union/contract/tier/hourlyRate/guaranteedHours/accountCode/boxKit…
+
+
+class SignatureRequestReq(BaseModel):
+    docType: str  # deal_memo | release | approval
+    docRef: str  # e.g. the memo person or document id
+    signers: list[str]  # ORDERED signing chain
+
+
+class SignReq(BaseModel):
+    signer: str  # must match the next signer in order
+
+
+class CallSheetPublishReq(BaseModel):
+    dayIndex: int
+    date: str  # ISO shoot date
+    generalCall: str = "07:00"
+    extraRecipients: list[dict] = []  # [{name, email, role?}] beyond the day's cast
+
+
+class CallSheetAckReq(BaseModel):
+    ackToken: str

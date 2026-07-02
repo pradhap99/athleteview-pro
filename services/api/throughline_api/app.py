@@ -28,15 +28,24 @@ from .accounting import (
 )
 from .budget import build_cost_report, compute_hot_costs, line_from_payload
 from .budget.model import BudgetLine, Fringe
+from .callsheets import affected_recipients, build_call_sheet
 from .colored_pages import next_color, revision_slug
 from .config import settings
+from .copilot import nudges_for
 from .db import init_db, make_engine, make_session_factory
-from .events import EventKind, append_event, list_events, org_of
+from .events import EventKind, append_event, list_events, org_of, org_stream_id
 from .exhibit_g import build_exhibit_g, render_exhibit_g_text
 from .graph import GraphState, reconstruct
 from .ingest import ingest_script
 from .interop import to_aicp, to_aicp_csv
 from .locations import company_moves, day_info, expiry_alerts
+from .org_directory import (
+    apply_template,
+    engagement_history,
+    fold_contacts,
+    fold_templates,
+    missing_memo_fields,
+)
 from .payroll import build_payroll_export
 from .propagation import (
     apply_change,
@@ -50,10 +59,14 @@ from .revision import propose_revision
 from .rules import RulesEngine
 from .schemas import (
     BudgetLineReq,
+    CallSheetAckReq,
+    CallSheetPublishReq,
     CheckRequestApproveReq,
     CheckRequestCreateReq,
+    ContactReq,
     CreateProjectReq,
     DealMemoReq,
+    DealMemoTemplateReq,
     EtcReq,
     ExhibitGSignReq,
     ImportScriptReq,
@@ -72,6 +85,8 @@ from .schemas import (
     RevisionReleaseReq,
     ScriptDiffReq,
     SidesLinkReq,
+    SignatureRequestReq,
+    SignReq,
     StartPacketReq,
     TimecardApproveReq,
     TimecardSubmitReq,
@@ -84,6 +99,7 @@ from .sides import (
     tracking_summary,
     watermark,
 )
+from .signatures import SignatureError, pending_view, require_next_signer
 from .timecard_service import (
     TimecardError,
     calc_to_dict,
@@ -796,6 +812,28 @@ def create_app(session_factory: sessionmaker | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         org = _write_ctx(session, principal, project_id)
         payload = body.model_dump()
+
+        # Merge org template defaults (explicit memo values win) — task 6.4.
+        if body.templateId:
+            template = fold_templates(session, org).get(body.templateId)
+            if template is None:
+                raise HTTPException(status_code=404, detail="deal-memo template not found")
+            payload = apply_template(payload, template)
+        # Link to the org crew DB: fill names from the contact, feed cross-show history.
+        if body.contactId:
+            contact = fold_contacts(session, org).get(body.contactId)
+            if contact is None:
+                raise HTTPException(status_code=404, detail="contact not found")
+            if not payload.get("legalName"):
+                payload["legalName"] = contact.get("name", payload["person"])
+
+        missing = missing_memo_fields(payload)
+        if missing:
+            raise HTTPException(
+                status_code=422,
+                detail=f"deal memo missing required terms: {', '.join(missing)} "
+                "(set them or supply a templateId that does)",
+            )
         # Validate the union/contract/tier resolves to a real rate card up front.
         state = reconstruct(session, project_id)
         try:
@@ -807,7 +845,11 @@ def create_app(session_factory: sessionmaker | None = None) -> FastAPI:
         _commit_event(
             session, org, project_id, principal.user_id, EventKind.DEAL_MEMO_CREATED, payload
         )
-        return {"person": body.person, "union": body.union, "hourlyRate": body.hourlyRate}
+        return {
+            "person": payload["person"],
+            "union": payload["union"],
+            "hourlyRate": payload["hourlyRate"],
+        }
 
     @app.post("/v1/projects/{project_id}/start-packets/{person}")
     def update_start_packet(
@@ -1211,6 +1253,289 @@ def create_app(session_factory: sessionmaker | None = None) -> FastAPI:
         _authz(session, principal, project_id)
         state = reconstruct(session, project_id)
         return {"moves": company_moves(state)}
+
+    # -- org crew directory + templates (task 6.4) ------------------------------
+    # Cross-project by design: contacts/templates live on the org stream, so a person is
+    # entered once and reused across every show in the org (never re-enter crew).
+
+    @app.post("/v1/org/contacts", status_code=201)
+    def upsert_contact(
+        body: ContactReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        _require_write(principal)
+        contact_id = body.id or f"ct-{uuid.uuid4().hex[:12]}"
+        payload = {**body.model_dump(), "id": contact_id}
+        append_event(
+            session,
+            org_id=principal.org_id,
+            project_id=org_stream_id(principal.org_id),
+            actor=principal.user_id,
+            kind=EventKind.CONTACT_UPSERTED,
+            payload=payload,
+        )
+        session.commit()
+        return {"id": contact_id, "name": body.name}
+
+    @app.get("/v1/org/contacts")
+    def list_contacts(
+        q: str | None = Query(default=None, description="name/role filter"),
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        contacts = list(fold_contacts(session, principal.org_id).values())
+        if q:
+            needle = q.lower()
+            contacts = [
+                c
+                for c in contacts
+                if needle in c.get("name", "").lower()
+                or any(needle in role.lower() for role in c.get("roles", []))
+            ]
+        return {"contacts": sorted(contacts, key=lambda c: c.get("name", ""))}
+
+    @app.get("/v1/org/contacts/{contact_id}")
+    def get_contact(
+        contact_id: str,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        contact = fold_contacts(session, principal.org_id).get(contact_id)
+        if contact is None:
+            raise HTTPException(status_code=404, detail="contact not found")
+        history = engagement_history(session, principal.org_id, contact)
+        return {**contact, "history": history}
+
+    @app.post("/v1/org/deal-memo-templates", status_code=201)
+    def save_template(
+        body: DealMemoTemplateReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        _require_write(principal)
+        template_id = f"tpl-{uuid.uuid4().hex[:12]}"
+        append_event(
+            session,
+            org_id=principal.org_id,
+            project_id=org_stream_id(principal.org_id),
+            actor=principal.user_id,
+            kind=EventKind.DEAL_MEMO_TEMPLATE_SAVED,
+            payload={"id": template_id, "name": body.name, "defaults": body.defaults},
+        )
+        session.commit()
+        return {"id": template_id, "name": body.name}
+
+    @app.get("/v1/org/deal-memo-templates")
+    def list_templates(
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        return {"templates": list(fold_templates(session, principal.org_id).values())}
+
+    # -- e-signature: ordered signing chain (task 6.4) ----------------------------
+
+    @app.post("/v1/projects/{project_id}/signature-requests", status_code=201)
+    def create_signature_request(
+        project_id: str,
+        body: SignatureRequestReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        org = _write_ctx(session, principal, project_id)
+        if not body.signers:
+            raise HTTPException(status_code=422, detail="signers must not be empty")
+        req_id = f"sig-{uuid.uuid4().hex[:12]}"
+        _commit_event(
+            session,
+            org,
+            project_id,
+            principal.user_id,
+            EventKind.SIGNATURE_REQUEST_CREATED,
+            {
+                "id": req_id,
+                "docType": body.docType,
+                "docRef": body.docRef,
+                "signers": body.signers,
+                "requestedAt": dt.datetime.now(dt.UTC).isoformat(),
+            },
+        )
+        return {"id": req_id, "signers": body.signers, "status": "pending"}
+
+    @app.post("/v1/projects/{project_id}/signature-requests/{req_id}:sign")
+    def sign_request(
+        project_id: str,
+        req_id: str,
+        body: SignReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        org = _write_ctx(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        try:
+            require_next_signer(state.signature_requests.get(req_id), body.signer)
+        except SignatureError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+        _commit_event(
+            session,
+            org,
+            project_id,
+            principal.user_id,
+            EventKind.SIGNATURE_SIGNED,
+            {"id": req_id, "signer": body.signer, "at": dt.datetime.now(dt.UTC).isoformat()},
+        )
+        request = reconstruct(session, project_id).signature_requests[req_id]
+        return {"id": req_id, "status": request["status"], "signed": request["signed"]}
+
+    @app.get("/v1/projects/{project_id}/signature-requests")
+    def list_signature_requests(
+        project_id: str,
+        pending: bool = Query(default=False, description="only incomplete (reminders feed)"),
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        _authz(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        if pending:
+            return {"pending": pending_view(state.signature_requests)}
+        return {"requests": list(state.signature_requests.values())}
+
+    # -- call sheets (task 4.1) ------------------------------------------------------
+
+    @app.post("/v1/projects/{project_id}/call-sheets:publish", status_code=201)
+    def publish_call_sheet(
+        project_id: str,
+        body: CallSheetPublishReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        org = _write_ctx(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        try:
+            content = build_call_sheet(
+                state, day_index=body.dayIndex, date_iso=body.date, general_call=body.generalCall
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+
+        # Recipients: the day's cast (auto) + explicit extras; each gets an ack token.
+        recipients = [
+            {
+                "name": c["character"],
+                "character": c["character"],
+                "role": "cast",
+                "ackToken": uuid.uuid4().hex,
+                "acknowledgedAt": None,
+            }
+            for c in content["cast"]
+        ] + [
+            {
+                "name": r.get("name", ""),
+                "email": r.get("email", ""),
+                "role": r.get("role", "crew"),
+                "character": r.get("character"),
+                "ackToken": uuid.uuid4().hex,
+                "acknowledgedAt": None,
+            }
+            for r in body.extraRecipients
+        ]
+
+        priors = [cs for cs in state.call_sheets.values() if cs["dayIndex"] == body.dayIndex]
+        revision = max((cs["revision"] for cs in priors), default=0) + 1
+        latest_prior = max(priors, key=lambda cs: cs["revision"], default=None)
+        renotify = (
+            affected_recipients(latest_prior["content"], content, recipients)
+            if latest_prior is not None
+            else recipients
+        )
+
+        cs_id = f"cs-{uuid.uuid4().hex[:12]}"
+        _commit_event(
+            session,
+            org,
+            project_id,
+            principal.user_id,
+            EventKind.CALL_SHEET_PUBLISHED,
+            {
+                "id": cs_id,
+                "dayIndex": body.dayIndex,
+                "revision": revision,
+                "content": content,
+                "recipients": recipients,
+                "publishedAt": dt.datetime.now(dt.UTC).isoformat(),
+            },
+        )
+        return {
+            "id": cs_id,
+            "revision": revision,
+            "supersedes": latest_prior["id"] if latest_prior is not None else None,
+            "content": content,
+            "recipients": [
+                {"name": r["name"], "role": r["role"], "ackToken": r["ackToken"]}
+                for r in recipients
+            ],
+            "renotify": [r["name"] for r in renotify],
+        }
+
+    @app.post("/v1/projects/{project_id}/call-sheets/{cs_id}:acknowledge")
+    def acknowledge_call_sheet(
+        project_id: str,
+        cs_id: str,
+        body: CallSheetAckReq,
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        """Capability-token ack — recipients need no seat."""
+        org = org_of(session, project_id)
+        if org is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        state = reconstruct(session, project_id)
+        sheet = state.call_sheets.get(cs_id)
+        if sheet is None:
+            raise HTTPException(status_code=404, detail="call sheet not found")
+        if not any(r.get("ackToken") == body.ackToken for r in sheet.get("recipients", [])):
+            raise HTTPException(status_code=404, detail="unknown ack token")
+        append_event(
+            session,
+            org_id=org,
+            project_id=project_id,
+            actor=f"ack:{body.ackToken[:8]}",
+            kind=EventKind.CALL_SHEET_ACKED,
+            payload={
+                "id": cs_id,
+                "ackToken": body.ackToken,
+                "at": dt.datetime.now(dt.UTC).isoformat(),
+            },
+        )
+        session.commit()
+        return {"id": cs_id, "acknowledged": True}
+
+    @app.get("/v1/projects/{project_id}/call-sheets")
+    def list_call_sheets(
+        project_id: str,
+        day: int | None = Query(default=None),
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        _authz(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        sheets = [cs for cs in state.call_sheets.values() if day is None or cs["dayIndex"] == day]
+        return {"callSheets": sorted(sheets, key=lambda c: (c["dayIndex"], c["revision"]))}
+
+    # -- per-role copilot nudges (task 4.1) --------------------------------------
+
+    @app.get("/v1/projects/{project_id}/copilot/nudges")
+    def copilot_nudges(
+        project_id: str,
+        role: str = Query(..., description="coordinator | first_ad | line_producer"),
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        _authz(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        try:
+            return {"role": role, "nudges": nudges_for(state, role)}
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
 
     # -- colored-page revisions (task 6.1) ------------------------------------
 

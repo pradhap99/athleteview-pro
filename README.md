@@ -123,6 +123,13 @@ This repo is being built **one eval-gated vertical slice at a time** (see
 - **6.3 Locations** — doc vault with COI expiry alerts (limit + additional insured),
   deterministic NOAA sunrise/sunset/magic-hour for the call sheet, hospital/parking/
   basecamp day-info, and company moves derived from the schedule.
+- **6.4 Crew DB + e-sign** — org-scoped cross-project contacts (enter a person once;
+  engagement history and rates carry between shows), deal-memo templates, and e-signature
+  with an enforced signing order + reminders feed.
+- **4.1 Call sheets + copilots** — auto-populated from the graph (scenes, cast with DOOD
+  codes, sun/hospital day-info, company moves); per-recipient ack tokens with tracking;
+  revisions supersede and re-notify **only the people whose day changed**; deterministic
+  per-role copilot nudges (coordinator/1st AD/LP), each citing its graph fact.
 
 AI-model slices (breakdown NER/LLM, RAG grounded Q&A, OCR actuals) are **scaffolded** —
 seams, versioned prompts, and eval harnesses are in place; they require a model-serving
