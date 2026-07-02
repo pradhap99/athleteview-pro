@@ -12,16 +12,20 @@ from collections.abc import Iterator
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session, sessionmaker
 
 from throughline_ml.scheduler import Scene as SchedScene
 from throughline_ml.scheduler import SchedulingProblem, solve_schedule
 
+from .budget import build_cost_report, line_from_payload
+from .budget.model import BudgetLine, Fringe
 from .config import settings
 from .db import init_db, make_engine, make_session_factory
 from .events import EventKind, append_event, list_events
 from .graph import GraphState, reconstruct
 from .ingest import ingest_script
+from .interop import to_aicp, to_aicp_csv
 from .propagation import (
     apply_change,
     diff_to_dict,
@@ -30,7 +34,17 @@ from .propagation import (
     reject_change,
 )
 from .rbac import AuthzError, NotFoundError, Principal, authorize_project, require_write
-from .schemas import CreateProjectReq, ImportScriptReq, OptimizeReq, RescheduleChangeReq
+from .revision import propose_revision
+from .schemas import (
+    BudgetLineReq,
+    CreateProjectReq,
+    EtcReq,
+    ImportScriptReq,
+    LedgerEntryReq,
+    OptimizeReq,
+    RescheduleChangeReq,
+    ScriptDiffReq,
+)
 
 
 def serialize_graph(state: GraphState) -> dict[str, Any]:
@@ -68,6 +82,7 @@ def serialize_graph(state: GraphState) -> dict[str, Any]:
         ],
         "dood": state.dood,
         "numDays": state.num_days,
+        "budgetLines": state.budget_lines,
         "proposedDiffs": [diff_to_dict(d) for d in state.proposed_diffs.values()],
     }
 
@@ -308,6 +323,170 @@ def create_app(session_factory: sessionmaker | None = None) -> FastAPI:
         )
         session.commit()
         return {"rejected": True}
+
+    # -- script revision → proposed diff (task 1.3) --------------------------
+
+    @app.post("/v1/projects/{project_id}/scripts:diff")
+    def script_revision_diff(
+        project_id: str,
+        body: ScriptDiffReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        org = _authz(session, principal, project_id)
+        _require_write(principal)
+        state = reconstruct(session, project_id)
+        diff, detail = propose_revision(
+            state,
+            diff_id=f"diff-{uuid.uuid4().hex[:12]}",
+            new_text=body.text,
+            fmt=body.format,
+        )
+        if not diff.changes:
+            return {"diff": None, "detail": detail, "summary": diff.summary}
+        append_event(
+            session,
+            org_id=org,
+            project_id=project_id,
+            actor=principal.user_id,
+            kind=EventKind.CHANGE_PROPOSED,
+            payload=diff_to_dict(diff),
+        )
+        session.commit()
+        return {"diff": diff_to_dict(diff), "detail": detail}
+
+    # -- budget (tasks 2.3 / 5.3) ---------------------------------------------
+
+    @app.post("/v1/projects/{project_id}/budget/lines", status_code=201)
+    def add_budget_line(
+        project_id: str,
+        body: BudgetLineReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        org = _authz(session, principal, project_id)
+        _require_write(principal)
+        try:
+            line = BudgetLine(
+                id=f"bl-{uuid.uuid4().hex[:12]}",
+                code=body.code,
+                category=body.category,
+                description=body.description,
+                qty=body.qty,
+                unit=body.unit,
+                rate=body.rate,
+                fringes=[Fringe(f.name, f.ratePct, f.cap) for f in body.fringes],
+                driver=body.driver,
+                aicp_section=body.aicpSection,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        append_event(
+            session,
+            org_id=org,
+            project_id=project_id,
+            actor=principal.user_id,
+            kind=EventKind.BUDGET_LINE_ADDED,
+            payload=line.to_payload(),
+        )
+        session.commit()
+        return line.to_payload()
+
+    @app.post("/v1/projects/{project_id}/budget/actuals", status_code=201)
+    def record_actual(
+        project_id: str,
+        body: LedgerEntryReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        org = _authz(session, principal, project_id)
+        _require_write(principal)
+        ev = append_event(
+            session,
+            org_id=org,
+            project_id=project_id,
+            actor=principal.user_id,
+            kind=EventKind.ACTUAL_RECORDED,
+            payload={"code": body.code, "amount": body.amount, "memo": body.memo},
+        )
+        session.commit()
+        return {"eventId": ev.id, "code": body.code, "amount": body.amount}
+
+    @app.post("/v1/projects/{project_id}/budget/commitments", status_code=201)
+    def record_commitment(
+        project_id: str,
+        body: LedgerEntryReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        org = _authz(session, principal, project_id)
+        _require_write(principal)
+        ev = append_event(
+            session,
+            org_id=org,
+            project_id=project_id,
+            actor=principal.user_id,
+            kind=EventKind.COMMITMENT_RECORDED,
+            payload={"code": body.code, "amount": body.amount, "memo": body.memo},
+        )
+        session.commit()
+        return {"eventId": ev.id, "code": body.code, "amount": body.amount}
+
+    @app.post("/v1/projects/{project_id}/budget/etc")
+    def set_etc(
+        project_id: str,
+        body: EtcReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        org = _authz(session, principal, project_id)
+        _require_write(principal)  # ETC override is a human judgment call
+        ev = append_event(
+            session,
+            org_id=org,
+            project_id=project_id,
+            actor=principal.user_id,
+            kind=EventKind.ETC_SET,
+            payload={"code": body.code, "amount": body.amount},
+        )
+        session.commit()
+        return {"eventId": ev.id, "code": body.code, "etc": body.amount}
+
+    @app.get("/v1/projects/{project_id}/cost-report")
+    def cost_report(
+        project_id: str,
+        at: int | None = Query(default=None),
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        _authz(session, principal, project_id)
+        state = reconstruct(session, project_id, at_event_id=at)
+        report = build_cost_report(
+            [line_from_payload(p) for p in state.budget_lines],
+            actuals=state.actuals,
+            commitments=state.commitments,
+            etc_overrides=state.etc_overrides,
+        )
+        return {
+            "atEventId": state.at_event_id,
+            "rows": [r.__dict__ for r in report.rows],
+            "byCategory": report.by_category,
+            "totals": report.totals,
+        }
+
+    @app.post("/v1/projects/{project_id}/budget:export")
+    def export_budget(
+        project_id: str,
+        format: str = Query(default="aicp", pattern="^(aicp|csv)$"),
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> Any:
+        _authz(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        lines = [line_from_payload(p) for p in state.budget_lines]
+        if format == "csv":
+            return PlainTextResponse(to_aicp_csv(lines), media_type="text/csv")
+        return to_aicp(lines, title=state.title)
 
     # -- schedule optimize (task 2.1) → proposed re-board --------------------
 

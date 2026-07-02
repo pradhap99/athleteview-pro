@@ -43,6 +43,28 @@ def _metrics(state: GraphState, assignments: dict[str, int]) -> tuple[int, int]:
     return holds, location_days
 
 
+def _driver_rate(state: GraphState, kind: str) -> float:
+    """Sum the rates of budget lines driven by a graph fact (e.g. per hold day).
+
+    Rates come from the budget lines themselves (data), never from code — this is what
+    links "the board changed" to "the top sheet changed" (§7.4 cost of this decision).
+    """
+    total = 0.0
+    for payload in state.budget_lines:
+        driver = payload.get("driver") or {}
+        if driver.get("kind") == kind:
+            total += float(payload.get("rate", 0.0))
+    return total
+
+
+def _dollar_delta(state: GraphState, hold_delta: int, location_delta: int) -> float:
+    return round(
+        hold_delta * _driver_rate(state, "hold_day")
+        + location_delta * _driver_rate(state, "location_day"),
+        2,
+    )
+
+
 def propose_reschedule(
     state: GraphState, *, diff_id: str, scene_id: str, to_day: int
 ) -> ProposedDiffState:
@@ -56,6 +78,9 @@ def propose_reschedule(
 
     holds_before, loc_before = _metrics(state, before)
     holds_after, loc_after = _metrics(state, after)
+    hold_delta = holds_after - holds_before
+    loc_delta = loc_after - loc_before
+    dollars = _dollar_delta(state, hold_delta, loc_delta)
     scene = state.scenes[scene_id]
 
     return ProposedDiffState(
@@ -63,13 +88,13 @@ def propose_reschedule(
         summary=(
             f"Move scene {scene.number} ({scene.location}) "
             f"from day {from_day} to day {to_day}: "
-            f"{holds_after - holds_before:+d} hold days, "
-            f"{loc_after - loc_before:+d} location-days"
+            f"{hold_delta:+d} hold days, {loc_delta:+d} location-days, "
+            f"{dollars:+,.2f} to the top sheet"
         ),
         changes=[{"op": "reschedule_scene", "sceneId": scene_id, "toDay": to_day}],
-        hold_days_delta=holds_after - holds_before,
-        location_days_delta=loc_after - loc_before,
-        dollar_delta=0.0,  # populated from budget-line drivers once task 2.3 lands
+        hold_days_delta=hold_delta,
+        location_days_delta=loc_delta,
+        dollar_delta=dollars,
     )
 
 
@@ -82,10 +107,16 @@ def propose_schedule(
     num_days: int,
 ) -> ProposedDiffState:
     """Wrap a solver result as a proposed re-board (never applied without confirmation)."""
+    holds_before, loc_before = _metrics(state, state.assignments)
     holds, location_days = _metrics(state, assignments)
+    hold_delta = holds - holds_before
+    loc_delta = location_days - loc_before
     return ProposedDiffState(
         id=diff_id,
-        summary=f"Optimized board: {num_days} days, {holds} hold days, {location_days} location-days",
+        summary=(
+            f"Optimized board: {num_days} days, {holds} hold days, "
+            f"{location_days} location-days ({_dollar_delta(state, hold_delta, loc_delta):+,.2f})"
+        ),
         changes=[
             {
                 "op": "set_schedule",
@@ -94,8 +125,9 @@ def propose_schedule(
                 "numDays": num_days,
             }
         ],
-        hold_days_delta=holds,
-        location_days_delta=location_days,
+        hold_days_delta=hold_delta,
+        location_days_delta=loc_delta,
+        dollar_delta=_dollar_delta(state, hold_delta, loc_delta),
     )
 
 
@@ -135,6 +167,41 @@ def apply_change(
                     "assignments": change["assignments"],
                     "dood": change["dood"],
                     "numDays": change["numDays"],
+                },
+            )
+        elif op == "add_scene":
+            ev = append_event(
+                session,
+                org_id=org_id,
+                project_id=project_id,
+                actor=actor,
+                kind=EventKind.SCENE_ADDED,
+                payload=change["scene"],
+            )
+        elif op == "remove_scene":
+            ev = append_event(
+                session,
+                org_id=org_id,
+                project_id=project_id,
+                actor=actor,
+                kind=EventKind.SCENE_REMOVED,
+                payload={"id": change["sceneId"]},
+            )
+        elif op == "update_scene":
+            ev = append_event(
+                session,
+                org_id=org_id,
+                project_id=project_id,
+                actor=actor,
+                kind=EventKind.SCENE_UPDATED,
+                payload={
+                    "id": change["sceneId"],
+                    "heading": change.get("heading"),
+                    "intExt": change.get("intExt"),
+                    "location": change.get("location"),
+                    "timeOfDay": change.get("timeOfDay"),
+                    "pageEighths": change.get("pageEighths"),
+                    "characters": change.get("characters"),
                 },
             )
         else:  # pragma: no cover - guarded by proposer

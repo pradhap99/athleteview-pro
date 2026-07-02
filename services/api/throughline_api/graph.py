@@ -68,6 +68,9 @@ class GraphState:
     dood: dict[str, list[str]] = field(default_factory=dict)
     num_days: int = 0
     budget_lines: list[dict[str, Any]] = field(default_factory=list)
+    actuals: list[dict[str, Any]] = field(default_factory=list)
+    commitments: list[dict[str, Any]] = field(default_factory=list)
+    etc_overrides: dict[str, float] = field(default_factory=dict)  # account code -> ETC
     proposed_diffs: dict[str, ProposedDiffState] = field(default_factory=dict)
 
     def confirmed_elements(self) -> list[ElementState]:
@@ -131,8 +134,37 @@ def _apply(state: GraphState, ev: Event) -> None:
     elif kind == EventKind.SCENE_RESCHEDULED:
         state.assignments[p["sceneId"]] = int(p["toDay"])
 
+    elif kind == EventKind.SCENE_REMOVED:
+        state.scenes.pop(p["id"], None)
+        state.assignments.pop(p["id"], None)
+
+    elif kind == EventKind.SCENE_UPDATED:
+        scene = state.scenes.get(p["id"])
+        if scene is not None:
+            for payload_key, attr in (
+                ("heading", "heading"),
+                ("location", "location"),
+                ("timeOfDay", "time_of_day"),
+                ("intExt", "int_ext"),
+                ("pageEighths", "page_eighths"),
+            ):
+                value = p.get(payload_key)
+                if value is not None:
+                    setattr(scene, attr, value)
+            if p.get("characters") is not None:
+                scene.characters = list(p["characters"])
+
     elif kind == EventKind.BUDGET_LINE_ADDED:
-        state.budget_lines.append(dict(p))  # type: ignore[attr-defined]
+        state.budget_lines.append(dict(p))
+
+    elif kind == EventKind.ACTUAL_RECORDED:
+        state.actuals.append(dict(p))
+
+    elif kind == EventKind.COMMITMENT_RECORDED:
+        state.commitments.append(dict(p))
+
+    elif kind == EventKind.ETC_SET:
+        state.etc_overrides[p["code"]] = float(p["amount"])  # type: ignore[attr-defined]
 
     elif kind == EventKind.CHANGE_PROPOSED:
         diff_id = p.get("diffId") or p["id"]

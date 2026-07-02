@@ -55,7 +55,7 @@ Convention per task — **Goal · Touch · Out of scope · Acceptance criteria �
   ≥0.80, safety-critical recall ≥0.95; timed QA study shows **net time saved > 0**.
   `make evals` green.
 
-### 1.3 Breakdown review UI + revision diff — ⬜
+### 1.3 Breakdown review UI + revision diff — 🟡 (revision diff + apply live server-side; confirm-queue UI pending)
 - **Goal:** fast keyboard confirm queue; re-import a revision → element-level diff
   (new/changed/deleted) + downstream ripple. **Touch:** `apps/web`, api.
 - **AC:** confirm/reject via keyboard; revision diff renders; confirmed elements unlock
@@ -77,7 +77,7 @@ Convention per task — **Goal · Touch · Out of scope · Acceptance criteria �
 - **Verify (EVAL GATE):** instance bank — hard-constraint violations ==0; mean optimality
   gap ≤10%; solve within budget (PAR-2). Regression asserts feasibility 100%.
 
-### 2.2 Reactive propagation + ripple preview — 🟡
+### 2.2 Reactive propagation + ripple preview — 🟡 (engine ✅ incl. hold-day/location-day/$ deltas from driver-linked budget lines; drag-overlay UI + OT/permit signals pending)
 - **Goal:** change one node → dependents recompute as a reviewable diff; drag-a-scene
   shows consequences before drop. **Touch:** api propagation engine, `apps/web` overlay.
 - **AC:** propagation always produces a diff to accept/reject; ripple preview shows new
@@ -85,7 +85,7 @@ Convention per task — **Goal · Touch · Out of scope · Acceptance criteria �
   event.
 - **Verify:** unit tests for cascade correctness; e2e drag-with-preview.
 
-### 2.3 Budget + AICP/Movie Magic interop + "cost of this decision" — ⬜
+### 2.3 Budget + AICP/Movie Magic interop + "cost of this decision" — 🟡 (budget lines linked to graph drivers, $ delta on reschedule, derivations, AICP A–W export/import round-trip + CSV; **Movie Magic .mmb deferred pending the legal review flagged below**)
 - **Goal:** budget derived from graph; AICP (A–W) + MM (.mmb) export/round-trip; live $ +
   delta on every object. **Touch:** api budget, ml (explainable estimates), interop,
   `apps/web` overlay.
@@ -173,7 +173,7 @@ Convention per task — **Goal · Touch · Out of scope · Acceptance criteria �
 - **Verify:** scenario tests: a call that forces a meal penalty is flagged; a minor
   scheduled past cap is blocked; jurisdiction swap changes limits.
 
-### 5.3 Budget structure + fringes + weekly cost report + hot costs — ⬜
+### 5.3 Budget structure + fringes + weekly cost report + hot costs — ✅ (ATL/BTL/Post/Other + free-form CoA codes; fringes with caps flow proportionally; EFC = Actuals + Committed + ETC, Variance = Budget − EFC; hot costs priced from rules-engine flags — feeds from Exhibit G once 5.5 lands; every figure carries a derivation)
 - **AC:** ATL/BTL/Post/Other structure with configurable CoA; fringes engine
   (rate/unit/cap, proportional on wage change); weekly cost report with
   **EFC = Actuals + Committed + ETC; Variance = Budget − EFC**; daily hot costs from

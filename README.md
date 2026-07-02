@@ -91,6 +91,19 @@ This repo is being built **one eval-gated vertical slice at a time** (see
   (SAG-AFTRA/DGA/IATSE/Teamsters) with worked-vs-elapsed hour tracking. **No rate or hour
   threshold is hard-coded** — all live in effective-dated rate-card tables, enforced by
   `make check-rates`.
+- **5.3 Budget + cost report + hot costs** — budget lines with fringes (caps, proportional
+  flow) and full derivations; weekly cost report with the fixed math
+  (**EFC = Actuals + Committed + ETC; Variance = Budget − EFC**) rolled up
+  ATL/BTL/Post/Other; daily hot costs priced from rules-engine flags (OT, meal penalties,
+  rest invasion, 6th/7th day) — every dollar cites its table entry.
+- **2.3 (AICP half)** — AICP bid-form (A–W) export/import with lossless round-trip on core
+  fields + CSV. Movie Magic `.mmb` stays deferred pending format legal review.
+- **2.2 $-ripples** — rescheduling a scene now previews the money: hold-day/location-day
+  deltas priced from driver-linked budget lines ("+$850 to the top sheet") before anything
+  commits.
+- **1.3 (server half)** — script revision diff: re-importing a revised draft yields an
+  element-level proposed diff (scenes added/removed/changed, character adds/drops) that
+  applies only on human confirm.
 
 AI-model slices (breakdown NER/LLM, RAG grounded Q&A, OCR actuals) are **scaffolded** —
 seams, versioned prompts, and eval harnesses are in place; they require a model-serving

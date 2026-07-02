@@ -10,6 +10,7 @@ Public API:
 """
 
 from .api import parse_script
+from .diff import SceneChange, ScriptDiff, diff_scripts
 from .fdx import parse_fdx, to_fdx
 from .fountain import parse_fountain
 from .types import ParsedElement, ParsedScene, ParsedScript
@@ -19,6 +20,9 @@ __all__ = [
     "parse_fdx",
     "to_fdx",
     "parse_fountain",
+    "diff_scripts",
+    "ScriptDiff",
+    "SceneChange",
     "ParsedScene",
     "ParsedScript",
     "ParsedElement",

@@ -24,7 +24,12 @@ class EventKind:
     ELEMENT_REJECTED = "element.rejected"  # HUMAN action only
     SCHEDULE_SET = "schedule.set"
     SCENE_RESCHEDULED = "scene.rescheduled"
+    SCENE_REMOVED = "scene.removed"
+    SCENE_UPDATED = "scene.updated"
     BUDGET_LINE_ADDED = "budget_line.added"
+    ACTUAL_RECORDED = "actual.recorded"  # human-entered/approved only — drafts stay out
+    COMMITMENT_RECORDED = "commitment.recorded"  # approved-uninvoiced PO = committed
+    ETC_SET = "etc.set"  # human judgment call — overrides the default ETC
     CHANGE_PROPOSED = "change.proposed"  # a reviewable diff — NOT applied
     CHANGE_CONFIRMED = "change.confirmed"  # HUMAN action — applies the diff
     CHANGE_REJECTED = "change.rejected"
