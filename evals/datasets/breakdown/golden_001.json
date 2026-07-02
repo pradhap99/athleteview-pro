@@ -1,0 +1,17 @@
+{
+  "_note": "One golden breakdown case. Gold elements are double-annotated (PRODUCT_SPEC §15.1). Element identity = (etype, name). Safety-critical types (stunt/sfx/animal/vehicle) are annotated for high recall.",
+  "id": "golden_001",
+  "source_format": "fountain",
+  "script": "INT. GUN SHOP - DAY\n\nMARIA examines a revolver on the counter. A German shepherd sleeps by the door.\n\nMARIA\nHow much?\n\nEXT. HIGHWAY - NIGHT\n\nA vintage MUSTANG screams past. It flips end over end in a violent stunt as sparks fly.\n\nDRIVER (V.O.)\nHold on!\n",
+  "gold_elements": [
+    {"etype": "cast", "name": "MARIA"},
+    {"etype": "cast", "name": "DRIVER"},
+    {"etype": "location", "name": "GUN SHOP"},
+    {"etype": "location", "name": "HIGHWAY"},
+    {"etype": "prop", "name": "revolver"},
+    {"etype": "animal", "name": "German shepherd"},
+    {"etype": "vehicle", "name": "Mustang"},
+    {"etype": "stunt", "name": "car flip"},
+    {"etype": "sfx", "name": "sparks"}
+  ]
+}

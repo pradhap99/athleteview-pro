@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+/*
+ * Throughline — dark, dense, keyboard-first production UI.
+ * A small set of CSS variables define the palette; Tailwind v4 exposes them
+ * as utility colors via @theme inline so we can use e.g. `bg-surface`.
+ */
+:root {
+  --bg: #0b0d10;
+  --surface: #131619;
+  --surface-2: #1a1e23;
+  --border: #262b31;
+  --fg: #e6e9ec;
+  --fg-muted: #8b949e;
+  --accent: #5b8cff;
+  --accent-fg: #0b0d10;
+
+  /* Domain color-coding */
+  --int: #3b82f6; /* interior  */
+  --ext: #22c55e; /* exterior  */
+  --day: #f59e0b; /* day       */
+  --night: #6366f1; /* night    */
+
+  --radius: 6px;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-int: var(--int);
+  --color-ext: var(--ext);
+  --color-day: var(--day);
+  --color-night: var(--night);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", monospace;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Keyboard-first: keep focus visible and crisp. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--fg-muted);
+}

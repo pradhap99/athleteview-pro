@@ -1,0 +1,34 @@
+# IATSE rate cards — [RATE CARD] effective-dated data.
+#
+# ⚠️  ILLUSTRATIVE SAMPLE VALUES — NOT AUTHORITATIVE. Replace with values verified against
+#     the applicable IATSE Basic Agreement / area-standards agreement before production use.
+#
+# IATSE turnaround is shorter than studio SAG (10h; 9h on distant location); rest-invasion
+# penalty is 2× (contrast Teamsters 3×). OT basis is worked hours.
+
+cards:
+  - union: IATSE
+    contract: basic_agreement
+    tier: crew
+    effective_date: "2021-08-01"
+    params:
+      overtime:
+        model: hourly
+        basis: worked
+        tiers:
+          - { after_hours: 8, multiplier: 1.5 }
+          - { after_hours: 12, multiplier: 2.0 }
+      meal:
+        first_meal_within_hours: 6.0
+        interval_minutes: 30
+        penalty_ladder_usd: [7.5, 10.0, 12.5]
+      turnaround:
+        by_context:
+          studio: 10.0
+          studio_zone: 10.0
+          nearby: 10.0
+          distant_overnight: 9.0
+        rest_invasion_multiplier: 2.0
+      premium_days:
+        sixth_day_multiplier: 1.5
+        seventh_day_multiplier: 2.0

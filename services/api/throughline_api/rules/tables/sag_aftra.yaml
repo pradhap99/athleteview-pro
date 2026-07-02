@@ -1,0 +1,61 @@
+# SAG-AFTRA rate cards — [RATE CARD] effective-dated data.
+#
+# ⚠️  ILLUSTRATIVE SAMPLE VALUES — NOT AUTHORITATIVE. These thresholds/penalties are
+#     placeholders to exercise the effective-dated engine. Replace with values verified
+#     against the actual SAG-AFTRA agreements/MOAs before any production use. The two
+#     effective dates below demonstrate how a 2024-MOA change phases in by PP-start-date.
+#
+# OT basis is "worked" hours for SAG performers (meal periods excluded from worked time).
+
+cards:
+  - union: SAG-AFTRA
+    contract: theatrical
+    tier: day_performer
+    effective_date: "2020-07-01"
+    params:
+      overtime:
+        model: hourly
+        basis: worked
+        tiers:
+          - { after_hours: 8, multiplier: 1.5 }
+          - { after_hours: 10, multiplier: 2.0 }
+      meal:
+        first_meal_within_hours: 6.0
+        interval_minutes: 30
+        penalty_ladder_usd: [25.0, 35.0, 50.0]
+      turnaround:
+        by_context:
+          studio: 12.0
+          studio_zone: 12.0
+          nearby: 12.0
+          distant_overnight: 12.0
+        rest_invasion_multiplier: 2.0
+      premium_days:
+        sixth_day_multiplier: 1.5
+        seventh_day_multiplier: 2.0
+
+  - union: SAG-AFTRA
+    contract: theatrical
+    tier: day_performer
+    effective_date: "2024-07-01"   # 2024 MOA — illustrative increased meal penalties
+    params:
+      overtime:
+        model: hourly
+        basis: worked
+        tiers:
+          - { after_hours: 8, multiplier: 1.5 }
+          - { after_hours: 10, multiplier: 2.0 }
+      meal:
+        first_meal_within_hours: 6.0
+        interval_minutes: 30
+        penalty_ladder_usd: [30.0, 40.0, 50.0]
+      turnaround:
+        by_context:
+          studio: 12.0
+          studio_zone: 12.0
+          nearby: 12.0
+          distant_overnight: 12.0
+        rest_invasion_multiplier: 2.0
+      premium_days:
+        sixth_day_multiplier: 1.5
+        seventh_day_multiplier: 2.0

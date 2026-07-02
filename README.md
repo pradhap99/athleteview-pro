@@ -1,138 +1,110 @@
-# ⚡ AthleteView Pro
-### The World's First Hybrid Wearable Camera + Biometric Broadcast Platform
+# Throughline
 
-> **See the game from inside the athlete. Feel every heartbeat.**
+**The AI-native operating system for film/TV/commercial production.**
 
-![Status](https://img.shields.io/badge/Status-Pre--Seed%20Build-orange) ![Stage](https://img.shields.io/badge/Stage-Prototype%20Design-blue) ![Location](https://img.shields.io/badge/HQ-Chennai%2C%20India-green) ![License](https://img.shields.io/badge/License-Proprietary-red)
+One *live production graph* from script to shoot day: change anything — recast a role,
+move a day, edit a rate — and it ripples through breakdown → schedule → Day-Out-of-Days →
+budget → call sheets as a **reviewable diff**. AI drafts every artifact; **humans
+confirm**. Everything round-trips losslessly with the tools the industry already requires
+(Movie Magic, AICP, Final Draft).
 
----
-
-## 🎯 What is AthleteView Pro?
-
-AthleteView Pro is a **hybrid wearable camera system** embedded in an athlete's jersey/patch that delivers:
-- **Live first-person POV video** from every player simultaneously
-- **Real-time biometric data** (Heart Rate, SpO2, Skin Temp, Motion) overlaid on broadcast
-- **AI-powered 3D Gaussian Splatting** for free-viewpoint replays
-- **Self-hosted streaming** to your own platform + simultaneous broadcast to TV/OTT channels
-- **Sub-300ms ultra-low-latency** live delivery via SRT protocol
+> **Working title:** Throughline (trademark/domain check pending; fallback "Keyframe").
 
 ---
 
-## 📁 Repository Structure
+## Why
+
+Production runs on a relay race of disconnected documents — a breakdown in one app, a
+schedule in a second, a budget in a third, call sheets in a fourth — stitched together by
+hand. Every handoff is lossy; every change is re-keyed. Throughline replaces the relay
+race with one normalized graph where a scene is a *node* whose cast, props, location, day,
+and dollars are *edges*. Change the node and the graph recomputes, showing the diff before
+anything commits.
+
+See `docs/PRODUCT_SPEC.md` for the full PRD, architecture, data model, API, and eval plan.
+
+## Architecture at a glance
+
+| Layer | Choice |
+|---|---|
+| Frontend | Next.js (App Router) + React 19 + TS · TanStack Query + Zustand · shadcn/Tailwind · cmdk (⌘K) · local-first, optimistic |
+| Backend | Python + FastAPI (modular monolith) · **PostgreSQL** single source of truth · append-only **event log → async projections** (CQRS) · pgvector · Valkey/Redis · Cloudflare R2 |
+| Realtime | Yjs (CRDT + presence) over WebSocket · PowerSync-style offline sync |
+| AI | vLLM/SGLang serving open, permissively-licensed models (Qwen3, DeepSeek, Phi-4) · XGrammar JSON · **OR-Tools CP-SAT** scheduling · pgvector hybrid search · Presidio + Granite Guardian |
+
+Design principles: **one graph not many files · AI drafts, humans confirm · explainable by
+default · instant (<100 ms) · keyboard-first · revision-native · offline-first on set ·
+interoperate don't imprison · utility AI only.**
+
+## Repository layout
 
 ```
-athletview-pro/
-├── docs/
-│   ├── 01-PRODUCT-SPEC.md          # Full hardware specifications
-│   ├── 02-PROCUREMENT.md           # Supplier contacts, pricing, BOM
-│   ├── 03-AI-MODEL-ARCHITECTURE.md # AI/ML pipeline specs
-│   ├── 04-STREAMING-ARCHITECTURE.md# Streaming platform design
-│   ├── 05-BUSINESS-PLAN.md         # GTM, revenue, fundraising
-│   ├── 06-COMPETITOR-ANALYSIS.md   # Why others failed, our moat
-│   └── 07-USE-CASES.md             # 10 detailed use cases
-├── firmware/
-│   ├── main-cam/                   # RV1106 firmware for Main Cam
-│   └── patch-cam/                  # RV1103 firmware for Patch Cam
-├── ai-models/
-│   ├── player-detection/           # YOLOv10 + BoT-SORT tracking
-│   ├── 3dgs-pipeline/              # LiveSplats 3D Gaussian Splatting
-│   └── biometric-fusion/           # HR/SpO2 signal processing
-├── streaming-platform/
-│   ├── ingest-server/              # SRT ingest + media server
-│   ├── web-player/                 # React + WebGL viewer
-│   └── tv-broadcast/               # HLS/RTMP broadcast output
-├── website/
-│   ├── landing/                    # Marketing website (Next.js)
-│   └── dashboard/                  # Analytics dashboard
-└── README.md
+throughline/
+  CLAUDE.md                 # agent context & guardrails (Part I of the spec)
+  BUILD_TASKS.md            # executable, eval-gated backlog (Part III)
+  docs/                     # PRODUCT_SPEC.md · glossary.md · licenses.md · openapi.yaml
+  apps/web/                 # Next.js frontend
+  services/api/             # FastAPI + event log + projections + propagation + rules engine
+  packages/shared/          # shared TS types (generated from openapi.yaml)
+  ml/                       # deterministic parsers, breakdown, scheduler (CP-SAT), rag
+  evals/                    # golden datasets + suites + graders (quality firewall)
+  scripts/                  # dev tooling (rate-card guard, etc.)
 ```
 
----
+## Quickstart
 
-## 🏗️ System Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    FIELD LAYER (On-Athlete)                      │
-│                                                                  │
-│  ┌──────────────────┐    ┌──────────┐    ┌──────────┐           │
-│  │   MAIN CAM (1x)  │    │PATCH CAM │    │PATCH CAM │  ...      │
-│  │  Chest/Sternum   │    │  (2x)    │    │  (3x)    │           │
-│  │                  │    │ Shoulder │    │  Back    │           │
-│  │ Sony IMX577 12MP │    │IMX307 2MP│    │IMX307 2MP│           │
-│  │ RV1106 SoC       │    │RV1103SoC │    │RV1103SoC │           │
-│  │ MAX86141 (HR/SpO2│    │Video only│    │Video only│           │
-│  │ MAX30208 (Temp)  │    │          │    │          │           │
-│  │ ICM42688 (IMU)   │    │          │    │          │           │
-│  │ 5G/WiFi6 TX      │    │BLE Mesh  │    │BLE Mesh  │           │
-│  └──────────────────┘    └──────────┘    └──────────┘           │
-│           │                    │               │                 │
-│           └────────────────────┴───────────────┘                │
-│                        BLE 5.3 Mesh → Main Cam                  │
-└─────────────────────────┬───────────────────────────────────────┘
-                          │ SRT (5G / WiFi 6)
-                          ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                   EDGE SERVER (At Venue)                         │
-│  NVIDIA Jetson Orin NX 16GB                                     │
-│  ├── SRT Ingest + Sync (all camera streams)                     │
-│  ├── YOLOv10 + BoT-SORT Player Detection                       │
-│  ├── Cross-Camera ReID (ViT embeddings)                         │
-│  └── LiveSplats 3DGS Real-time Reconstruction                  │
-└─────────────────────────┬───────────────────────────────────────┘
-                          │
-              ┌───────────┼───────────┐
-              ▼           ▼           ▼
-         ┌─────────┐ ┌────────┐ ┌──────────┐
-         │AthleteView│ │TV/OTT  │ │Social /  │
-         │Platform   │ │Channels│ │YouTube/  │
-         │(own CDN)  │ │RTMP out│ │Twitch    │
-         └─────────┘ └────────┘ └──────────┘
+```bash
+make setup        # uv venv + editable install (+ web deps if pnpm present)
+make test         # python unit tests
+make lint         # ruff check + format
+make typecheck    # pyright
+make check-rates  # fails if a union rate/threshold is hard-coded (see below)
+make dev          # api (:8000) + web (:3000)
 ```
 
----
+Python only (no Node needed for the backend/ML slices):
 
-## 🔧 Quick Links
+```bash
+uv venv .venv --python 3.11
+uv pip install --python .venv -e ".[dev]"
+.venv/bin/pytest
+```
 
-- [📋 Full Product Spec](docs/01-PRODUCT-SPEC.md)
-- [🛒 Procurement Guide](docs/02-PROCUREMENT.md)
-- [🤖 AI Model Architecture](docs/03-AI-MODEL-ARCHITECTURE.md)
-- [📡 Streaming Architecture](docs/04-STREAMING-ARCHITECTURE.md)
-- [📈 Business Plan](docs/05-BUSINESS-PLAN.md)
-- [⚔️ Competitor Analysis](docs/06-COMPETITOR-ANALYSIS.md)
-- [🎮 Use Cases](docs/07-USE-CASES.md)
+## What's built so far
 
----
+This repo is being built **one eval-gated vertical slice at a time** (see
+`BUILD_TASKS.md`). Implemented and tested today:
 
-## 🚀 Competitive Moat
+- **0.1 Foundation** — monorepo, Makefile, CI, guardrails (`.claude/settings.json`), the
+  rate-card CI guard.
+- **0.2 Graph core** — append-only event log + async projections + graph snapshot
+  reconstruction (`GET /v1/projects/{id}/graph?at=eventId`) + propose/confirm/reject
+  change diffs. "AI drafts, humans confirm" is enforced **structurally** — a draft's
+  status can only be flipped by an explicit human action.
+- **1.1 Script ingest** — deterministic Fountain + Final Draft (`.fdx`) parser →
+  scene nodes (int/ext, location, time-of-day, page-eighths, characters) with lossless
+  `.fdx` round-trip. (No AI touches format fidelity.)
+- **2.1 Scheduler** — OR-Tools CP-SAT stripboard: assign scenes to days minimizing
+  company moves + cast hold-days under availability/turnaround constraints; DOOD derived
+  (work/hold/travel).
+- **5.1 Rules engine** — table-driven, effective-dated union/labor rules engine
+  (SAG-AFTRA/DGA/IATSE/Teamsters) with worked-vs-elapsed hour tracking. **No rate or hour
+  threshold is hard-coded** — all live in effective-dated rate-card tables, enforced by
+  `make check-rates`.
 
-| Feature | AthleteView Pro | FirstV1sion | Intel True View | Hawk-Eye |
-|---------|----------------|-------------|-----------------|----------|
-| Wearable camera | ✅ | ✅ | ❌ | ❌ |
-| Multi-patch (3+ cams/player) | ✅ | ❌ | ❌ | ❌ |
-| HR + SpO2 live on broadcast | ✅ | Partial | ❌ | ❌ |
-| 3DGS free-viewpoint replay | ✅ | ❌ | ✅ (fixed) | ❌ |
-| Own streaming platform | ✅ | ❌ | ❌ | ❌ |
-| Under $80 BOM per athlete | ✅ | ❌ (>$500) | ❌ ($2M+/venue) | ❌ |
-| India-first GTM | ✅ | ❌ | ❌ | ❌ |
+AI-model slices (breakdown NER/LLM, RAG grounded Q&A, OCR actuals) are **scaffolded** —
+seams, versioned prompts, and eval harnesses are in place; they require a model-serving
+endpoint (vLLM/SGLang) to run end-to-end and must pass their eval gates before merge.
 
----
+## The quality firewall
 
-## 💰 Funding Ask
+AI features do not merge until they pass eval gates (see `docs/PRODUCT_SPEC.md` §15):
+breakdown F1 ≥0.90 (chars/locations) & safety-critical recall ≥0.95; scheduler
+hard-constraint violations ==0 & optimality gap ≤10%; RAG faithfulness ≥0.90 or it
+abstains. Run `make evals`.
 
-| Round | Amount | Use | Timeline |
-|-------|--------|-----|----------|
-| Pre-Seed | ₹1.5 Cr ($180K) | 5 prototypes, IP filing, pilot | Month 0–6 |
-| Seed | ₹8 Cr ($960K) | 100-unit production, platform | Month 6–18 |
-| Series A | ₹40 Cr ($4.8M) | Scale to 5 leagues | Month 18–36 |
+## License
 
----
-
-## 👤 Founder
-
-**Pradhap** — Product Builder, Chennai, India
-Building AthleteView Pro with AI-first product methodology.
-
----
-
-*Built with ❤️ in Chennai, India | © 2026 AthleteView Pro*
+Apache-2.0. Ships only Apache/MIT/BSD model weights and dependencies — see
+`docs/licenses.md`. Face **recognition** is a non-goal (BIPA/GDPR/EU-AI-Act); detection
+only if ever needed.
