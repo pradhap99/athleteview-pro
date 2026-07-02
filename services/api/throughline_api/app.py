@@ -31,11 +31,12 @@ from .budget.model import BudgetLine, Fringe
 from .colored_pages import next_color, revision_slug
 from .config import settings
 from .db import init_db, make_engine, make_session_factory
-from .events import EventKind, append_event, list_events
+from .events import EventKind, append_event, list_events, org_of
 from .exhibit_g import build_exhibit_g, render_exhibit_g_text
 from .graph import GraphState, reconstruct
 from .ingest import ingest_script
 from .interop import to_aicp, to_aicp_csv
+from .locations import company_moves, day_info, expiry_alerts
 from .payroll import build_payroll_export
 from .propagation import (
     apply_change,
@@ -57,6 +58,8 @@ from .schemas import (
     ExhibitGSignReq,
     ImportScriptReq,
     LedgerEntryReq,
+    LocationDocReq,
+    LocationReq,
     OptimizeReq,
     PayrollExportReq,
     PettyCashIssueReq,
@@ -68,9 +71,18 @@ from .schemas import (
     RescheduleChangeReq,
     RevisionReleaseReq,
     ScriptDiffReq,
+    SidesLinkReq,
     StartPacketReq,
     TimecardApproveReq,
     TimecardSubmitReq,
+)
+from .sides import (
+    SidesError,
+    check_link_access,
+    generate_sides,
+    render_sides_text,
+    tracking_summary,
+    watermark,
 )
 from .timecard_service import (
     TimecardError,
@@ -987,6 +999,218 @@ def create_app(session_factory: sessionmaker | None = None) -> FastAPI:
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from None
+
+    # -- sides + watermarked distribution (task 6.2) ----------------------------
+
+    @app.post("/v1/projects/{project_id}/sides/links", status_code=201)
+    def issue_sides_link(
+        project_id: str,
+        body: SidesLinkReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        org = _write_ctx(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        pages = generate_sides(state, day_index=body.dayIndex, character=body.character)
+        if not pages:
+            raise HTTPException(
+                status_code=422,
+                detail=f"no scenes scheduled on day {body.dayIndex}"
+                + (f" featuring {body.character!r}" if body.character else ""),
+            )
+        link_id = f"sl-{uuid.uuid4().hex[:16]}"  # the token IS the credential
+        _commit_event(
+            session,
+            org,
+            project_id,
+            principal.user_id,
+            EventKind.SIDES_LINK_ISSUED,
+            {"id": link_id, **body.model_dump()},
+        )
+        return {
+            "id": link_id,
+            "pageCount": len(pages),
+            "viewPath": f"/v1/projects/{project_id}/sides/links/{link_id}/view",
+        }
+
+    @app.post("/v1/projects/{project_id}/sides/links/{link_id}:revoke")
+    def revoke_sides_link(
+        project_id: str,
+        link_id: str,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        org = _write_ctx(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        if link_id not in state.sides_links:
+            raise HTTPException(status_code=404, detail="sides link not found")
+        _commit_event(
+            session,
+            org,
+            project_id,
+            principal.user_id,
+            EventKind.SIDES_LINK_REVOKED,
+            {"id": link_id},
+        )
+        return {"id": link_id, "revoked": True}
+
+    @app.get("/v1/projects/{project_id}/sides/links/{link_id}/view")
+    def view_sides(
+        project_id: str,
+        link_id: str,
+        format: str = Query(default="json", pattern="^(json|text)$"),
+        session: Session = Depends(get_session),
+    ) -> Any:
+        """Capability-URL access: the link token is the credential (viewers need no seat).
+
+        Expiry/revocation are checked on every view; each open appends a delivery event.
+        """
+        org = org_of(session, project_id)
+        if org is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        state = reconstruct(session, project_id)
+        try:
+            link = check_link_access(state.sides_links.get(link_id), now=dt.datetime.now())
+        except SidesError as exc:
+            raise HTTPException(status_code=410, detail=str(exc)) from None
+        pages = generate_sides(state, day_index=link["dayIndex"], character=link.get("character"))
+        append_event(
+            session,
+            org_id=org,
+            project_id=project_id,
+            actor=f"link:{link_id}",
+            kind=EventKind.SIDES_OPENED,
+            payload={"id": link_id, "at": dt.datetime.now(dt.UTC).isoformat()},
+        )
+        session.commit()
+        if format == "text":
+            return PlainTextResponse(render_sides_text(pages, link))
+        return {
+            "watermark": watermark(link),
+            "allowDownload": link.get("allowDownload", False),
+            "allowPrint": link.get("allowPrint", False),
+            "pages": [{**page, "watermark": watermark(link)} for page in pages],
+        }
+
+    @app.post("/v1/projects/{project_id}/sides/links/{link_id}:acknowledge")
+    def acknowledge_sides(
+        project_id: str,
+        link_id: str,
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        """Recipient acknowledgment — also capability-based (no seat required)."""
+        org = org_of(session, project_id)
+        if org is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        state = reconstruct(session, project_id)
+        try:
+            check_link_access(state.sides_links.get(link_id), now=dt.datetime.now())
+        except SidesError as exc:
+            raise HTTPException(status_code=410, detail=str(exc)) from None
+        append_event(
+            session,
+            org_id=org,
+            project_id=project_id,
+            actor=f"link:{link_id}",
+            kind=EventKind.SIDES_ACKNOWLEDGED,
+            payload={"id": link_id, "at": dt.datetime.now(dt.UTC).isoformat()},
+        )
+        session.commit()
+        return {"id": link_id, "acknowledged": True}
+
+    @app.get("/v1/projects/{project_id}/sides/tracking")
+    def sides_tracking(
+        project_id: str,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        _authz(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        rows = tracking_summary(state)
+        return {"recipients": rows, "chase": [r for r in rows if r["needsChase"]]}
+
+    # -- locations (task 6.3) ----------------------------------------------------
+
+    @app.post("/v1/projects/{project_id}/locations", status_code=201)
+    def add_location(
+        project_id: str,
+        body: LocationReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        org = _write_ctx(session, principal, project_id)
+        loc_id = f"loc-{uuid.uuid4().hex[:12]}"
+        _commit_event(
+            session,
+            org,
+            project_id,
+            principal.user_id,
+            EventKind.LOCATION_ADDED,
+            {"id": loc_id, **body.model_dump()},
+        )
+        return {"id": loc_id, "name": body.name}
+
+    @app.post("/v1/projects/{project_id}/locations/{loc_id}/documents", status_code=201)
+    def add_location_document(
+        project_id: str,
+        loc_id: str,
+        body: LocationDocReq,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        org = _write_ctx(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        if loc_id not in state.locations:
+            raise HTTPException(status_code=404, detail="location not found")
+        if body.type not in ("release", "permit", "coi"):
+            raise HTTPException(status_code=422, detail=f"unknown document type {body.type!r}")
+        doc_id = f"doc-{uuid.uuid4().hex[:12]}"
+        _commit_event(
+            session,
+            org,
+            project_id,
+            principal.user_id,
+            EventKind.LOCATION_DOC_ADDED,
+            {"locationId": loc_id, "docId": doc_id, **body.model_dump()},
+        )
+        return {"docId": doc_id, "locationId": loc_id, "type": body.type}
+
+    @app.get("/v1/projects/{project_id}/locations/{loc_id}/day-info")
+    def location_day_info(
+        project_id: str,
+        loc_id: str,
+        date: str = Query(..., description="ISO date"),
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        _authz(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        location = state.locations.get(loc_id)
+        if location is None:
+            raise HTTPException(status_code=404, detail="location not found")
+        return day_info(location, dt.date.fromisoformat(date))
+
+    @app.get("/v1/projects/{project_id}/locations:alerts")
+    def location_alerts(
+        project_id: str,
+        within_days: int = Query(default=30, ge=0),
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        _authz(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        alerts = expiry_alerts(state, today=dt.date.today(), within_days=within_days)
+        return {"withinDays": within_days, "alerts": alerts}
+
+    @app.get("/v1/projects/{project_id}/company-moves")
+    def get_company_moves(
+        project_id: str,
+        session: Session = Depends(get_session),
+        principal: Principal = Depends(get_principal),
+    ) -> dict[str, Any]:
+        _authz(session, principal, project_id)
+        state = reconstruct(session, project_id)
+        return {"moves": company_moves(state)}
 
     # -- colored-page revisions (task 6.1) ------------------------------------
 

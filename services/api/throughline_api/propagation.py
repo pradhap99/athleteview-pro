@@ -202,6 +202,7 @@ def apply_change(
                     "timeOfDay": change.get("timeOfDay"),
                     "pageEighths": change.get("pageEighths"),
                     "characters": change.get("characters"),
+                    "body": change.get("body"),
                 },
             )
         else:  # pragma: no cover - guarded by proposer

@@ -170,3 +170,32 @@ class PayrollExportReq(BaseModel):
     provider: str = "wrapbook"  # ep | castandcrew | wrapbook
     startDate: str
     endDate: str
+
+
+class SidesLinkReq(BaseModel):
+    dayIndex: int
+    recipientName: str
+    recipientEmail: str
+    character: str | None = None  # character-filtered sides in one click
+    expiresAt: str | None = None  # ISO datetime; None = no expiry (still revocable)
+    allowDownload: bool = False
+    allowPrint: bool = False
+
+
+class LocationReq(BaseModel):
+    name: str
+    address: str = ""
+    lat: float | None = None
+    lng: float | None = None
+    parking: str = ""
+    basecamp: str = ""
+    nearestHospital: str = ""
+
+
+class LocationDocReq(BaseModel):
+    type: str  # release | permit | coi
+    issueDate: str = ""
+    expiryDate: str = ""
+    liabilityLimit: float | None = None  # COI
+    additionalInsured: str | None = None  # COI endorsement
+    reference: str = ""  # external doc pointer (vault object key)

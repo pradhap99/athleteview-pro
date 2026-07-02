@@ -51,6 +51,14 @@ class EventKind:
     TIMECARD_SUBMITTED = "timecard.submitted"
     TIMECARD_APPROVED = "timecard.approved"  # ordered chain, like check requests
     EXHIBIT_G_SIGNED = "exhibit_g.signed"  # performer e-signature per (person, date)
+    # Sides distribution (task 6.2) — watermarked, expiring, revocable; opens/acks logged.
+    SIDES_LINK_ISSUED = "sides_link.issued"
+    SIDES_LINK_REVOKED = "sides_link.revoked"
+    SIDES_OPENED = "sides.opened"
+    SIDES_ACKNOWLEDGED = "sides.acknowledged"
+    # Locations (task 6.3).
+    LOCATION_ADDED = "location.added"
+    LOCATION_DOC_ADDED = "location_doc.added"  # release | permit | COI (w/ expiry + limit)
     CHANGE_PROPOSED = "change.proposed"  # a reviewable diff — NOT applied
     CHANGE_CONFIRMED = "change.confirmed"  # HUMAN action — applies the diff
     CHANGE_REJECTED = "change.rejected"

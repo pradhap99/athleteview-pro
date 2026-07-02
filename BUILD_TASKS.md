@@ -209,8 +209,20 @@ Convention per task — **Goal · Touch · Out of scope · Acceptance criteria �
   become A1 (existing numbers never shift), applied automatically to revision diffs;
   auto revision-mark asterisks on changed lines (deterministic line diff); revision slug
   (color + date) + full history on the graph.
-### 6.2 Sides + secure watermarked distribution (P0) — ⬜
-### 6.3 Location management (P0) — ⬜
+### 6.2 Sides + secure watermarked distribution (P0) — ✅
+- **AC met:** sides auto-generate from a shooting day's scenes in shooting order
+  (scene-number order until call sheets land in 4.1) + character-filtered in one click;
+  recipient name/email + link id burned into **every page**; capability links (token =
+  credential, viewers need no seat) with expiry + one-click revocation + download/print
+  flags; every open and acknowledgment is an event — tracking endpoint surfaces the
+  chase-before-call list.
+
+### 6.3 Location management (P0) — ✅ (weather = provider seam at the call-sheet layer; neighborhood notification = P2)
+- **AC met:** per-location doc vault (release/permit/**COI with additional-insured +
+  expiry + liability limit**) with most-urgent-first expiry alerts; deterministic NOAA
+  sunrise/sunset + magic hour (±few min, unit-tested against known LA values) +
+  parking/basecamp/nearest-24h-hospital as the call-sheet day-info block; company moves
+  derived from consecutive schedule days with different primary locations.
 ### 6.4 Cast & crew DB + deal memos + e-signature (P0) — ⬜
 ### 6.5 Tax-incentive estimator (P1) — ⬜
 ### 6.6 Clearances / cue sheets / releases; safety; green (P1/P2) — ⬜

@@ -62,6 +62,7 @@ def ingest_script(
                 "heading": scene.heading,
                 "pageEighths": scene.page_eighths,
                 "characters": list(scene.characters),
+                "body": scene.body,
             },
         )
         for character in scene.characters:

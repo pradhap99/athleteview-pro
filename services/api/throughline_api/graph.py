@@ -30,6 +30,7 @@ class SceneState:
     heading: str
     page_eighths: int = 1
     characters: list[str] = field(default_factory=list)
+    body: str = ""  # scene text — confidential IP; distributed only via watermarked sides
 
 
 @dataclass
@@ -80,6 +81,8 @@ class GraphState:
     start_packets: dict[str, dict[str, Any]] = field(default_factory=dict)  # person -> forms
     timecards: dict[str, dict[str, Any]] = field(default_factory=dict)
     exhibit_g_signatures: dict[str, dict[str, Any]] = field(default_factory=dict)  # person:date
+    sides_links: dict[str, dict[str, Any]] = field(default_factory=dict)
+    locations: dict[str, dict[str, Any]] = field(default_factory=dict)
     proposed_diffs: dict[str, ProposedDiffState] = field(default_factory=dict)
 
     @property
@@ -114,6 +117,7 @@ def _apply(state: GraphState, ev: Event) -> None:
             heading=p.get("heading", ""),
             page_eighths=p.get("pageEighths", 1),
             characters=list(p.get("characters", [])),
+            body=p.get("body", ""),
         )
 
     elif kind == EventKind.ELEMENT_DRAFTED:
@@ -162,6 +166,7 @@ def _apply(state: GraphState, ev: Event) -> None:
                 ("timeOfDay", "time_of_day"),
                 ("intExt", "int_ext"),
                 ("pageEighths", "page_eighths"),
+                ("body", "body"),
             ):
                 value = p.get(payload_key)
                 if value is not None:
@@ -288,7 +293,42 @@ def _apply(state: GraphState, ev: Event) -> None:
             "date": p["date"],
             "signedBy": p.get("signedBy", p["person"]),
             "signedAt": p.get("signedAt", ""),
-        }  # type: ignore[attr-defined]
+        }
+
+    # -- sides distribution (task 6.2) ---------------------------------------------
+
+    elif kind == EventKind.SIDES_LINK_ISSUED:
+        state.sides_links[p["id"]] = {
+            **p,
+            "revoked": False,
+            "openedAt": None,
+            "acknowledgedAt": None,
+        }
+
+    elif kind == EventKind.SIDES_LINK_REVOKED:
+        link = state.sides_links.get(p["id"])
+        if link is not None:
+            link["revoked"] = True
+
+    elif kind == EventKind.SIDES_OPENED:
+        link = state.sides_links.get(p["id"])
+        if link is not None and not link.get("openedAt"):
+            link["openedAt"] = p.get("at", "")
+
+    elif kind == EventKind.SIDES_ACKNOWLEDGED:
+        link = state.sides_links.get(p["id"])
+        if link is not None and not link.get("acknowledgedAt"):
+            link["acknowledgedAt"] = p.get("at", "")
+
+    # -- locations (task 6.3) --------------------------------------------------------
+
+    elif kind == EventKind.LOCATION_ADDED:
+        state.locations[p["id"]] = {**p, "documents": []}
+
+    elif kind == EventKind.LOCATION_DOC_ADDED:
+        location = state.locations.get(p["locationId"])
+        if location is not None:
+            location["documents"].append(dict(p))  # type: ignore[attr-defined]
 
     elif kind == EventKind.CHANGE_PROPOSED:
         diff_id = p.get("diffId") or p["id"]

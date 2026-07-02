@@ -117,6 +117,12 @@ This repo is being built **one eval-gated vertical slice at a time** (see
   flag, e-signature) and is the same feed hot costs regenerate from; approved timecards
   export payroll-ready (EP/Cast&Crew/Wrapbook) with box/kit taxability and a union P&H
   wage-base summary.
+- **6.2 Watermarked sides** — sides from a day's scenes (+ character filter), recipient
+  identity burned into every page, expiring/revocable capability links (viewers need no
+  seat), and open/acknowledge tracking with a chase-before-call list.
+- **6.3 Locations** — doc vault with COI expiry alerts (limit + additional insured),
+  deterministic NOAA sunrise/sunset/magic-hour for the call sheet, hospital/parking/
+  basecamp day-info, and company moves derived from the schedule.
 
 AI-model slices (breakdown NER/LLM, RAG grounded Q&A, OCR actuals) are **scaffolded** —
 seams, versioned prompts, and eval harnesses are in place; they require a model-serving

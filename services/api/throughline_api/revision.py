@@ -86,6 +86,7 @@ def propose_revision(
             "heading": scene.heading,
             "pageEighths": scene.page_eighths,
             "characters": list(scene.characters),
+            "body": scene.body,
         }
         if number != scene.number:
             payload["renumberedFrom"] = scene.number  # locked pages: A-scene, no renumbering
@@ -105,6 +106,7 @@ def propose_revision(
                 "timeOfDay": after.time_of_day,
                 "pageEighths": after.page_eighths,
                 "characters": list(after.characters),
+                "body": after.body,
                 "fieldsChanged": change.fields_changed,
                 "charactersAdded": change.characters_added,
                 "charactersRemoved": change.characters_removed,
